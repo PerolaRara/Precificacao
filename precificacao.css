@@ -1,4 +1,3 @@
-/* Seu CSS permanece o mesmo, pois já está bem estruturado e não depende do arquivo principal. */
 @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
 
 body {
@@ -59,6 +58,12 @@ nav ul {
     padding: 0;
     margin: 20px 0;
     text-align: center;
+     /* ==== INÍCIO - Adicionado para o Menu ==== */
+    display: flex; /* Usa flexbox para alinhar */
+    justify-content: center; /* Centraliza horizontalmente */
+    align-items: center; /* Centraliza verticalmente (se necessário) */
+    flex-wrap: wrap; /* Permite que os itens quebrem para a próxima linha */
+     /* ==== FIM - Adicionado para o Menu ==== */
 }
 
 nav ul li {
@@ -79,11 +84,35 @@ nav ul li:hover > a { /* Aplica o hover apenas ao link do item pai */
     background-color: #e8d7d4;
 }
 
+/* ==== INÍCIO SEÇÃO - ESTILOS ESPECÍFICOS DO MENU ==== */
+/* Estilo fixo do link "Limpar Página" */
+#linkLimparPagina {
+    background-color: #dfb6b0; /* Fundo rosa delicado */
+    padding: 5px 10px; /* Espaçamento interno */
+    border-radius: 10px; /* Bordas arredondadas */
+    color: white; /* Texto branco para contraste */
+    /*REMOVIDO: margin-left: 20px;  Não precisa mais de margem à esquerda */
+}
+
+/* Estilo para o hover *apenas* nos outros links do menu */
+nav ul li a:not(#linkLimparPagina):hover {
+    background-color: #e8d7d4; /* Seu hover original, mais claro */
+}
+
+
+/*  Opcional: Se quiser um hover *diferente* para o limpar página:*/
+#linkLimparPagina:hover {
+    background-color: #c89790;  /* Tom mais escuro */
+}
+
+/* ==== FIM SEÇÃO - ESTILOS ESPECÍFICOS DO MENU ==== */
+
+
 .subpagina {
     margin-top: 20px;
 }
 
-/* Estilo unificado para h2 e h3 dentro de subpagina - ALTERADO AQUI */
+/* Estilo unificado para h2 e h3 dentro de subpagina */
 .subpagina h2, .subpagina h3 {
     color: #7aa2a9;
     text-align: center;
@@ -91,7 +120,7 @@ nav ul li:hover > a { /* Aplica o hover apenas ao link do item pai */
     font-size: 1.5em; /* ou outro tamanho que você achar adequado */
 }
 
-/* Espaçamento superior aumentado para o h3 específico - ADICIONADO AQUI */
+/* Espaçamento superior aumentado para o h3 específico */
 #titulo-ferias-13o {
    margin-top: 30px; /* Ajuste este valor conforme necessário */
 }
