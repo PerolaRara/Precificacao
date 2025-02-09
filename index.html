@@ -26,6 +26,7 @@
             <li><a href="#" onclick="mostrarSubMenu('custos-indiretos')">Custos Indiretos</a></li>
             <li><a href="#" onclick="mostrarSubMenu('produtos-cadastrados')">Produtos Cadastrados</a></li>
             <li><a href="#" onclick="mostrarSubMenu('calculo-precificacao')">Cálculo da Precificação</a></li>
+            <li><a href="#" onclick="mostrarSubMenu('precificacoes-geradas')">Precificações Geradas</a></li> <!--  **NOVO MENU** -->
             <li><a href="#" onclick="mostrarSubMenu('importar-exportar')">Importar/Exportar</a></li> <!--  MENU IMPORTAR/EXPORTAR -->
             <li><a href="#" onclick="limparPagina()" id="linkLimparPagina">Limpar Página</a></li> <!-- MENU LIMPAR PÁGINA, com ID -->
         </ul>
@@ -227,6 +228,13 @@
 <section id="calculo-precificacao" class="subpagina">
     <h2>Cálculo da Precificação</h2>
 
+    <!-- **NOVO CAMPO: Nome do Cliente** -->
+    <div class="form-group">
+        <label for="nome-cliente">Nome do Cliente (Opcional):</label>
+        <input type="text" id="nome-cliente" name="nome-cliente" placeholder="Insira o nome do cliente">
+    </div>
+    <!-- **FIM DO NOVO CAMPO** -->
+
     <div class="calculation-container">
         <div class="section">
             <label for="produto-pesquisa">Pesquisar Produto:</label>
@@ -324,8 +332,39 @@
 			<span id="total-final-com-taxas">R$ 0,00</span>
 		</div>
     </div>
+
+    <!-- **NOVO BOTÃO: Gerar Nota de Precificação** -->
+    <div style="text-align: center; margin-top: 20px;">
+        <button type="button" onclick="gerarNotaPrecificacao()">Gerar Nota de Precificação</button>
+    </div>
+    <!-- **FIM DO NOVO BOTÃO** -->
+
 </section>
 <!-- Fim da Seção Cálculo da Precificação -->
+
+<!-- Seção Precificações Geradas -->
+<section id="precificacoes-geradas" class="subpagina" style="display: none;">
+    <h2>Precificações Geradas</h2>
+
+    <div class="form-group">
+        <input type="text" id="busca-precificacao" placeholder="Buscar por número, ano ou cliente..." onkeyup="buscarPrecificacoesGeradas()">
+    </div>
+
+    <table id="tabela-precificacoes-geradas" class="tabela-gerada">
+        <thead>
+            <tr>
+                <th>Número e Ano</th>
+                <th>Nome do Cliente</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- Precificações geradas serão listadas aqui -->
+        </tbody>
+    </table>
+</section>
+<!-- Fim da Seção Precificações Geradas -->
+
 
 <!--  SEÇÃO IMPORTAR/EXPORTAR -->
 <section id="importar-exportar" class="subpagina" style="display:none;">
