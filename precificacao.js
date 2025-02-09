@@ -255,6 +255,9 @@ function cadastrarMaterialInsumo() {
     // 1. Adiciona o item ao array de materiais.
     materiais.push(item);
 
+    // *** ADICIONADO AQUI: Atualizar produtos que usam este material ***
+    atualizarProdutosComMaterial(nome); // Passa o nome do material alterado
+
     // 2. Atualiza a tabela *ANTES* de resetar o formulário.
     atualizarTabelaMateriaisInsumos();
 
@@ -275,6 +278,46 @@ function cadastrarMaterialInsumo() {
     // --- SALVAR DADOS e BACKUP AUTOMÁTICO (após adicionar material) ---
     salvarDados();
     backupAutomatico(); // <-- Chamada da função de backup
+}
+
+/* Função para atualizar produtos que usam um material alterado */
+function atualizarProdutosComMaterial(nomeMaterialAlterado) {
+    produtos.forEach(produto => {
+        produto.materiais.forEach(materialDoProduto => {
+            if (materialDoProduto.nome === nomeMaterialAlterado) {
+                // Encontrar o material atualizado na lista global de materiais
+                const materialAtualizado = materiais.find(mat => mat.nome === nomeMaterialAlterado);
+                if (materialAtualizado) {
+                    // Atualizar o custo unitário do material no produto
+                    materialDoProduto.custoUnitario = materialAtualizado.custoUnitario;
+
+                    // Recalcular o custo total do material no produto (mantendo dimensões/quantidade)
+                    let custoTotalMaterial = 0;
+                    if (materialDoProduto.tipo === 'Área') {
+                        const area = (materialDoProduto.largura * materialDoProduto.altura) / 10000; // em m²
+                        custoTotalMaterial = materialDoProduto.custoUnitario * area;
+                    } else if (materialDoProduto.tipo === 'Comprimento') {
+                        const comprimentoEmMetros = materialDoProduto.comprimento / 100; // em metros
+                        custoTotalMaterial = materialDoProduto.custoUnitario * comprimentoEmMetros;
+                    } else {
+                        custoTotalMaterial = materialDoProduto.custoUnitario * materialDoProduto.quantidade;
+                    }
+                    materialDoProduto.custoTotal = custoTotalMaterial;
+                }
+            }
+        });
+        // Recalcular o custo total de materiais do produto
+        produto.custoMateriais = produto.materiais.reduce((total, material) => total + material.custoTotal, 0);
+    });
+
+    // Atualizar a tabela de produtos cadastrados
+    atualizarTabelaProdutosCadastrados();
+
+    // Verificar se o produto está selecionado na seção de cálculo e atualizar se estiver
+    const nomeProdutoSelecionado = document.getElementById('produto-pesquisa').value;
+    if (nomeProdutoSelecionado) {
+        carregarDadosProduto(nomeProdutoSelecionado);
+    }
 }
 /* ==== FIM SEÇÃO - CADASTRO DE MATERIAL/INSUMO ==== */
 
@@ -361,7 +404,22 @@ function editarMaterialInsumo(index) {
 
     // --- Preenche os campos do formulário ---
     document.getElementById('nome-material').value = item.nome;
-    document.getElementById('valor-total-material').value = item.tipo === 'area' ? item.custoUnitario * ((item.larguraCm/100) * (item.alturaCm/100)) : item.custoUnitario;  //Mantem o valor total.
+
+    // --- Cálculo e preenchimento do valor total original ---
+    let valorTotalOriginal = 0;
+    if (item.tipo === 'comprimento') {
+        valorTotalOriginal = item.custoUnitario * (item.comprimentoCm / 100); // Recalcula valor total original para Comprimento
+    } else if (item.tipo === 'litro') {
+        valorTotalOriginal = item.custoUnitario * (item.volumeMl / 1000); // Recalcula valor total original para Litro
+    } else if (item.tipo === 'quilo') {
+        valorTotalOriginal = item.custoUnitario * (item.pesoG / 1000);   // Recalcula valor total original para Quilo
+    } else if (item.tipo === 'area') {
+        valorTotalOriginal = item.custoUnitario * ((item.larguraCm / 100) * (item.alturaCm / 100)); // Recalcula valor total original para Área
+    } else { // unidade
+        valorTotalOriginal = item.custoUnitario; // Para unidade, o custo unitário já é o valor total
+    }
+    document.getElementById('valor-total-material').value = valorTotalOriginal.toFixed(2); // Preenche com o valor total ORIGINAL
+
 
     // Seleciona o radio button correto *e* dispara o evento 'change'
     const radio = document.querySelector(`input[name="tipo-material"][value="${item.tipo}"]`);
@@ -1540,4 +1598,3 @@ function limparPagina() {
     }
 }
 /* ==== FIM SEÇÃO - IMPORTAR/EXPORTAR/LIMPAR ==== */
-
