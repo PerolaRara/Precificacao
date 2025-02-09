@@ -27,7 +27,7 @@
             <li><a href="#" onclick="mostrarSubMenu('produtos-cadastrados')">Produtos Cadastrados</a></li>
             <li><a href="#" onclick="mostrarSubMenu('calculo-precificacao')">Cálculo da Precificação</a></li>
             <li><a href="#" onclick="mostrarSubMenu('importar-exportar')">Importar/Exportar</a></li> <!--  MENU IMPORTAR/EXPORTAR -->
-            <li><a href="#" onclick="limparPagina()">Limpar Página</a></li> <!-- MENU LIMPAR PÁGINA -->
+            <li><a href="#" onclick="limparPagina()" id="linkLimparPagina">Limpar Página</a></li> <!-- MENU LIMPAR PÁGINA, com ID -->
         </ul>
     </nav>
     <hr class="menu">
@@ -117,8 +117,8 @@
         <h3 id="titulo-ferias-13o">Informações sobre custo de férias e 13º Salário</h3>
         <div class="form-group">
             <label>Deseja incluir o custo de férias e 13º salário?</label><br>
-            <label><input type="checkbox" id="incluir-ferias-13o-sim" name="incluir-ferias-13o" value="sim"> Sim</label>
-            <label><input type="checkbox" id="incluir-ferias-13o-nao" name="incluir-ferias-13o" value="nao" checked> Não</label>
+            <label><input type="radio" id="incluir-ferias-13o-sim" name="incluir-ferias-13o" value="sim"> Sim</label>
+            <label><input type="radio" id="incluir-ferias-13o-nao" name="incluir-ferias-13o" value="nao" checked> Não</label>
         </div>
 
         <div class="form-group">
