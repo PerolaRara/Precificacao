@@ -98,6 +98,9 @@ function limparFormulario(formId) {
 /* ==== INÍCIO SEÇÃO - EVENT LISTENERS GLOBAIS ==== */
 /* Monitorar os radios para exibir os campos corretos */
 document.addEventListener('DOMContentLoaded', () => { //  <--  AGORA É GLOBAL
+
+    //Removido isFirstLoad
+
     document.querySelectorAll('input[name="tipo-material"]').forEach(radio => {
         radio.addEventListener('change', function() {
             const camposComprimento = document.getElementById('campos-comprimento');
@@ -157,6 +160,8 @@ document.addEventListener('DOMContentLoaded', () => { //  <--  AGORA É GLOBAL
             autocompleteDiv.classList.add('hidden');
         }
     });
+
+    //Removido: marcação de página carregada.
 });
 /* ==== FIM SEÇÃO - EVENT LISTENERS GLOBAIS ==== */
 
@@ -274,7 +279,7 @@ function cadastrarMaterialInsumo() {
 /* ==== FIM SEÇÃO - CADASTRO DE MATERIAL/INSUMO ==== */
 
 /* ==== INÍCIO SEÇÃO - TABELA DE MATERIAL/INSUMO ==== */
-/* Atualizar a tabela de Materiais e Insumos */
+
 function atualizarTabelaMateriaisInsumos() {
     const tbody = document.querySelector('#tabela-materiais-insumos tbody');
     tbody.innerHTML = '';
@@ -305,10 +310,13 @@ function atualizarTabelaMateriaisInsumos() {
         const botaoRemover = document.createElement('button');
         botaoRemover.textContent = 'Remover';
         botaoRemover.addEventListener('click', function() {
-            removerMaterialInsumo(index); //  <--  CORRETO (já existia)
+            removerMaterialInsumo(index);
         });
         cellAcoes.appendChild(botaoRemover);
     });
+
+    // REMOVIDO: salvarDados();  Não precisa salvar aqui.
+    // REMOVIDO: backupAutomatico(); Não precisa de backup aqui.
 }
 
 // Função para buscar materiais cadastrados
@@ -516,6 +524,8 @@ function carregarCustosIndiretosPredefinidos() {
     });
 
     atualizarTabelaCustosIndiretos();
+    // REMOVIDO: salvarDados();  <- Não precisa salvar aqui
+    // REMOVIDO: backupAutomatico(); <- Não precisa de backup aqui
 }
 
 function salvarCustoIndiretoPredefinido(index) {
@@ -531,8 +541,8 @@ function salvarCustoIndiretoPredefinido(index) {
         }
         atualizarTabelaCustosIndiretos();
         calcularCustos(); // <-- Importante! Recalcula após salvar custo indireto
-        salvarDados(); // <-- Salva após salvar custo indireto
-        backupAutomatico(); // <-- ADICIONADO!
+        salvarDados();   // <-- Salva após modificar
+        backupAutomatico(); // <-- Adicionado!
     } else {
         alert("Por favor, insira um valor numérico válido.");
     }
@@ -576,7 +586,8 @@ function salvarNovoCustoIndiretoLista(botao) {
         atualizarTabelaCustosIndiretos(); // Atualiza a tabela
         calcularCustos();  // <-- Importante!
         salvarDados();  // <-- Importante! Salva após modificar
-        backupAutomatico(); // <-- ADICIONADO!
+        backupAutomatico(); // <-- Adicionado!
+
     } else {
         alert("Por favor, preencha a descrição e insira um valor numérico válido.");
     }
@@ -592,7 +603,7 @@ function removerNovoCustoIndiretoLista(botaoRemover) {
     atualizarTabelaCustosIndiretos();
     calcularCustos(); // <-- Importante!
     salvarDados();  // <-- Importante! Salva após remover
-     backupAutomatico(); // <-- ADICIONADO!
+    backupAutomatico(); // <-- Adicionado!
 }
 
 function atualizarTabelaCustosIndiretos() {
@@ -652,6 +663,9 @@ function atualizarTabelaCustosIndiretos() {
         botaoZerar.onclick = () => zerarCustoIndireto(custo.tempIndex, 'adicional'); // Passa o tempIndex
         cellAcoes.appendChild(botaoZerar);
     });
+
+    // REMOVIDO: salvarDados(); Não precisa salvar aqui
+    // REMOVIDO: backupAutomatico(); Não precisa de backup aqui.
 }
 
 function zerarCustoIndireto(indexOuTempIndex, tipo) {
@@ -670,17 +684,16 @@ function zerarCustoIndireto(indexOuTempIndex, tipo) {
     atualizarTabelaCustosIndiretos(); // Atualiza a tabela após zerar
     calcularCustos(); // <-- Importante!
     salvarDados();  // <-- Importante! Salva após zerar
-    backupAutomatico(); // <-- ADICIONADO!
+    backupAutomatico(); // <-- Adicionado!
 }
 
-
 function buscarCustosIndiretosCadastrados() {
-    const termoBusca = document.getElementById('busca-custo-indireto').value.toLowerCase();
+      const termoBusca = document.getElementById('busca-custo-indireto').value.toLowerCase();
     const tbody = document.querySelector('#tabela-custos-indiretos tbody');
     tbody.innerHTML = '';
 
     const horasTrabalhadas = maoDeObra.horas;
-    if (horasTrabalhadas === undefined || horasTrabalhadas === null || horasTrabalhadas <= 0) {
+     if (horasTrabalhadas === undefined || horasTrabalhadas === null || horasTrabalhadas <= 0) {
         const row = tbody.insertRow();
         const cellMensagem = row.insertCell();
         cellMensagem.textContent = "Preencha as 'Horas trabalhadas por mês' no menu 'Custo de Mão de Obra' para calcular o custo por hora.";
@@ -691,7 +704,7 @@ function buscarCustosIndiretosCadastrados() {
     const custosExibicao = [...custosIndiretosPredefinidos, ...custosIndiretosAdicionais].filter(custo => custo.valorMensal > 0);
     const custosFiltrados = custosExibicao.filter(custo => custo.descricao.toLowerCase().includes(termoBusca));
 
-    custosFiltrados.forEach((custo) => {
+   custosFiltrados.forEach((custo) => {
         const originalIndexPredefinidos = custosIndiretosPredefinidos.findIndex(c => c.descricao === custo.descricao);
         const originalAdicional = custosIndiretosAdicionais.find(c => c.descricao === custo.descricao && c.tempIndex === custo.tempIndex);
 
@@ -726,6 +739,7 @@ function buscarCustosIndiretosCadastrados() {
         }
     });
 }
+
 /* ==== FIM SEÇÃO - CUSTOS INDIRETOS ==== */
 
 /* ==== INÍCIO SEÇÃO - PRODUTOS CADASTRADOS ==== */
@@ -847,6 +861,8 @@ function atualizarTabelaProdutosCadastrados() {
         });
         cellAcoes.appendChild(botaoRemoverProduto);
     });
+     // REMOVIDO: salvarDados();  Não precisa salvar aqui
+    // REMOVIDO: backupAutomatico(); Não precisa de backup aqui
 }
 
 function buscarProdutosCadastrados() {
@@ -1132,7 +1148,6 @@ function removerLinhaMaterial(row) {
     row.remove();
 }
 /* ==== FIM SEÇÃO - PRODUTOS CADASTRADOS ==== */
-
 /* ==== INÍCIO SEÇÃO - CÁLCULO DA PRECIFICAÇÃO ==== */
 // --- Cálculo da Precificação (Refatorado) ---
 
@@ -1286,8 +1301,7 @@ function salvarTaxaCredito() {
     taxaCredito.percentual = incluir ? percentual : 0; //Salva 0 se não incluir.
     calcularTotalComTaxas(); //Recalcula o total com a nova taxa.
     salvarDados(); // <-- Salva após alterar taxa
-    backupAutomatico();
-}
+    }
 
 function calcularTotalComTaxas() {
     const precoVendaTexto = document.getElementById('total-final').textContent; //Pega do total com margem.
@@ -1319,7 +1333,7 @@ function exportarDados() {
     // Agora, exportarDados simplesmente chama backupAutomatico.
     // A lógica de gerar o nome do arquivo, criar o blob, etc.,
     // está toda dentro de backupAutomatico.
-    backupAutomatico();
+    backupAutomatico(); // <-- Backup is triggered here for Export button
 }
 
 function importarDados() {
@@ -1392,8 +1406,7 @@ function importarDados() {
                 calcularCustos(); // <--  Recalcula tudo após importar e atualizar campos
 
                 mostrarSubMenu('calculo-precificacao'); //  Volta para a seção de cálculo
-
-
+                backupAutomatico(); // <-- Backup is triggered here for Import button
             } catch (erro) {
                 alert('Erro ao importar dados: ' + erro.message);
             }
@@ -1527,3 +1540,4 @@ function limparPagina() {
     }
 }
 /* ==== FIM SEÇÃO - IMPORTAR/EXPORTAR/LIMPAR ==== */
+
