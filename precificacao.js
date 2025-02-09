@@ -25,6 +25,8 @@ let itemEdicaoCustoIndireto = null;
 let novoCustoIndiretoCounter = 0; // Contador para IDs únicos de custos indiretos adicionais
 let taxaCredito = {percentual: 5, incluir: false}; //Objeto para taxa de crédito.  INICIALIZA COM 5%
 let margemLucroPadrao = 50; // Margem de lucro padrão.
+let precificacoesGeradas = []; // **NOVA VARIÁVEL GLOBAL**
+let proximoNumeroPrecificacao = 1; // **NOVA VARIÁVEL GLOBAL**
 /* ==== FIM SEÇÃO - VARIÁVEIS GLOBAIS ==== */
 
 /* ==== INÍCIO SEÇÃO - FUNÇÃO DE BACKUP AUTOMÁTICO ==== */
@@ -36,7 +38,9 @@ function backupAutomatico() {
         custosIndiretosAdicionais,
         produtos,
         taxaCredito,
-        margemLucroPadrao
+        margemLucroPadrao,
+        precificacoesGeradas, // **ALTERAÇÃO: Inclui precificacoesGeradas no backup**
+        proximoNumeroPrecificacao // **ALTERAÇÃO: Inclui proximoNumeroPrecificacao no backup**
     });
     const blob = new Blob([dadosParaExportar], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -73,7 +77,7 @@ function formatarMoeda(valor) {
 
 /* Exibir a subpágina desejada */
 function mostrarSubMenu(submenuId) {
-    const conteudos = ['materiais-insumos', 'mao-de-obra', 'custos-indiretos', 'produtos-cadastrados', 'calculo-precificacao', 'importar-exportar']; // Adicionado importar-exportar
+    const conteudos = ['materiais-insumos', 'mao-de-obra', 'custos-indiretos', 'produtos-cadastrados', 'calculo-precificacao', 'precificacoes-geradas', 'importar-exportar']; // Adicionado precificacoes-geradas
     conteudos.forEach(id => {
         const elemento = document.getElementById(id);
         if (elemento) {
@@ -131,6 +135,7 @@ document.addEventListener('DOMContentLoaded', () => { //  <--  AGORA É GLOBAL
     atualizarTabelaMateriaisInsumos();     //  <-- Importante!
     atualizarTabelaCustosIndiretos();    //  <-- Importante!
     atualizarTabelaProdutosCadastrados(); //  <-- Importante!
+    atualizarTabelaPrecificacoesGeradas(); // **NOVO: Atualiza tabela de precificações**
     atualizarPainelUltimoBackup();      // <-- Importante!
 
     //Inicializar com a seção de cálculo.  (NO DOMContentLoaded GLOBAL)
@@ -1384,6 +1389,181 @@ function calcularTotalComTaxas() {
 }
 /* ==== FIM SEÇÃO - CÁLCULO DA PRECIFICAÇÃO ==== */
 
+/* ==== INÍCIO SEÇÃO - PRECIFICAÇÕES GERADAS ==== */
+function gerarNotaPrecificacao() {
+    console.log("Função gerarNotaPrecificacao() foi chamada!");
+
+    const nomeCliente = document.getElementById('nome-cliente').value.trim();
+    const produtoNome = document.getElementById('produto-pesquisa').value;
+    const horasProduto = document.getElementById('horas-produto').value;
+    const custoProduto = document.getElementById('custo-produto').textContent;
+    const totalMaoDeObra = document.getElementById('total-mao-de-obra').textContent;
+    const custoIndireto = document.getElementById('custo-indireto').textContent;
+    const subtotal = document.getElementById('subtotal').textContent;
+    const margemLucroValor = document.getElementById('margem-lucro-valor').textContent;
+    const margemLucroPercentual = document.getElementById('margem-lucro-final').value;
+    const totalFinal = document.getElementById('total-final').textContent;
+    const taxaCreditoValor = document.getElementById('taxa-credito-valor').textContent;
+    const taxaCreditoPercentual = document.getElementById('taxa-credito-percentual').value;
+    const totalFinalComTaxas = document.getElementById('total-final-com-taxas').textContent;
+
+    const agora = new Date();
+    const ano = agora.getFullYear();
+    const numeroNota = proximoNumeroPrecificacao++;
+    const numeroAno = `${numeroNota}/${ano}`;
+
+    const nota = {
+        numeroAno: numeroAno,
+        nomeCliente: nomeCliente,
+        produtoNome: produtoNome,
+        horasProduto: horasProduto,
+        custoProduto: custoProduto,
+        totalMaoDeObra: totalMaoDeObra,
+        custoIndireto: custoIndireto,
+        subtotal: subtotal,
+        margemLucroValor: margemLucroValor,
+        margemLucroPercentual: margemLucroPercentual,
+        totalFinal: totalFinal,
+        taxaCreditoValor: taxaCreditoValor,
+        taxaCreditoPercentual: taxaCreditoPercentual,
+        totalFinalComTaxas: totalFinalComTaxas
+    };
+
+    precificacoesGeradas.push(nota);
+    atualizarTabelaPrecificacoesGeradas();
+    salvarDados();
+    backupAutomatico();
+
+    // --- GERAÇÃO DA PÁGINA HTML PARA IMPRESSÃO ---
+    const notaHTML = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Nota de Precificação ${numeroAno}</title>
+            <style>
+                body { font-family: 'Roboto', Arial, sans-serif; }
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+                th { background-color: #cae6e7; }
+                .total-line { border-top: 2px solid #7aa2a9; margin-top: 15px; }
+                .subtotal-line { border-top: 2px solid #7aa2a9; margin: 15px 0; }
+                .total { font-weight: bold; font-size: 1.1em; }
+            </style>
+        </head>
+        <body>
+            <h1>Nota de Precificação ${numeroAno}</h1>
+            ${nomeCliente ? `<p><strong>Cliente:</strong> ${nomeCliente}</p>` : ''}
+            <p><strong>Produto:</strong> ${produtoNome}</p>
+            <p><strong>Horas para Conclusão:</strong> ${horasProduto}</p>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Descrição</th>
+                        <th>Valor</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Custo dos Materiais</td><td>${custoProduto}</td></tr>
+                    <tr><td>Custo da Mão de Obra</td><td>${totalMaoDeObra}</td></tr>
+                    <tr><td>Custos Indiretos</td><td>${custoIndireto}</td></tr>
+                    <tr><td colspan="2" class="subtotal-line"></td></tr>
+                    <tr><td class="total">Subtotal</td><td class="total">${subtotal}</td></tr>
+                    <tr><td>Margem de Lucro (${margemLucroPercentual}%)</td><td>${margemLucroValor}</td></tr>
+                    <tr><td>Total (com Margem)</td><td>${totalFinal}</td></tr>
+                    ${taxaCreditoPercentual > 0 ? `<tr><td>Taxa de Crédito (${taxaCreditoPercentual}%)</td><td>${taxaCreditoValor}</td></tr>` : ''}
+                    <tr><td colspan="2" class="total-line"></td></tr>
+                    <tr><td class="total">Total Final ${taxaCreditoPercentual > 0 ? '(com Taxas)' : '(sem Taxas)'}</td><td class="total">${totalFinalComTaxas}</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+    `;
+
+    // --- ABRIR NOVA JANELA COM A NOTA HTML ---
+    const novaJanela = window.open('', '_blank');
+    novaJanela.document.write(notaHTML);
+    novaJanela.document.close();
+
+    alert(`Nota de Precificação ${numeroAno} gerada e aberta em nova página!`);
+}
+/* ==== FIM SEÇÃO - PRECIFICAÇÕES GERADAS ==== */
+
+/* ==== INÍCIO SEÇÃO - PRECIFICAÇÕES GERADAS ==== */
+function atualizarTabelaPrecificacoesGeradas() {
+    const tbody = document.querySelector('#tabela-precificacoes-geradas tbody');
+    tbody.innerHTML = '';
+
+    precificacoesGeradas.forEach((precificacao, index) => {
+        const row = tbody.insertRow();
+        const cellNumeroAno = row.insertCell();
+        const cellNomeCliente = row.insertCell();
+        const cellAcoes = row.insertCell();
+
+        cellNumeroAno.textContent = precificacao.numeroAno;
+        cellNomeCliente.textContent = precificacao.nomeCliente || 'Não informado'; // Se não tiver nome, exibe "Não informado"
+
+        const botaoVisualizar = document.createElement('button');
+        botaoVisualizar.textContent = 'Visualizar';
+        botaoVisualizar.onclick = () => visualizarPrecificacao(index);
+        cellAcoes.appendChild(botaoVisualizar);
+    });
+}
+
+function buscarPrecificacoesGeradas() {
+    const termoBusca = document.getElementById('busca-precificacao').value.toLowerCase();
+    const tbody = document.querySelector('#tabela-precificacoes-geradas tbody');
+    tbody.innerHTML = '';
+
+    const precificacoesFiltradas = precificacoesGeradas.filter(precificacao => {
+        return (
+            precificacao.numeroAno.toLowerCase().includes(termoBusca) ||
+            (precificacao.nomeCliente && precificacao.nomeCliente.toLowerCase().includes(termoBusca)) // Verifica se nomeCliente existe antes de usar toLowerCase()
+        );
+    });
+
+    precificacoesFiltradas.forEach((precificacao, index) => {
+        const row = tbody.insertRow();
+        const cellNumeroAno = row.insertCell();
+        const cellNomeCliente = row.insertCell();
+        const cellAcoes = row.insertCell();
+
+        cellNumeroAno.textContent = precificacao.numeroAno;
+        cellNomeCliente.textContent = precificacao.nomeCliente || 'Não informado';
+
+        const botaoVisualizar = document.createElement('button');
+        botaoVisualizar.textContent = 'Visualizar';
+        botaoVisualizar.onclick = () => visualizarPrecificacao(index);
+        cellAcoes.appendChild(botaoVisualizar);
+    });
+}
+
+function visualizarPrecificacao(index) {
+    const precificacao = precificacoesGeradas[index];
+
+    if (precificacao) {
+        let notaHTML = `
+            <h2>Nota de Precificação ${precificacao.numeroAno}</h2>
+            ${precificacao.nomeCliente ? `<p><strong>Cliente:</strong> ${precificacao.nomeCliente}</p>` : ''}
+            <p><strong>Produto:</strong> ${precificacao.produtoNome}</p>
+            <p><strong>Horas para Concluir o Produto:</strong> ${precificacao.horasProduto}</p>
+            <p><strong>Custo do Produto (Materiais):</strong> ${precificacao.custoProduto}</p>
+            <p><strong>Custo Total Mão de Obra:</strong> ${precificacao.totalMaoDeObra}</p>
+            <p><strong>Custos Indiretos:</strong> ${precificacao.custoIndireto}</p>
+            <hr>
+            <p><strong>Subtotal:</strong> ${precificacao.subtotal}</p>
+            <p><strong>Margem de Lucro (${precificacao.margemLucroPercentual}%):</strong> ${precificacao.margemLucroValor}</p>
+            <p><strong>Total (com Margem de Lucro):</strong> ${precificacao.totalFinal}</p>
+            ${precificacao.taxaCreditoPercentual > 0 ? `<p><strong>Taxa de Compra a Crédito (${precificacao.taxaCreditoPercentual}%):</strong> ${precificacao.taxaCreditoValor}</p>` : ''}
+            <hr>
+            <p><strong>Total Final ${precificacao.taxaCreditoPercentual > 0 ? '(com Taxas)' : '(sem Taxas)'}:</strong> ${precificacao.totalFinalComTaxas}</p>
+        `;
+        alert(notaHTML); // Exibe a nota em um alert (pode ser melhorado para exibir em um modal ou div)
+    }
+}
+/* ==== FIM SEÇÃO - PRECIFICAÇÕES GERADAS ==== */
+
+
 /* ==== INÍCIO SEÇÃO - IMPORTAR/EXPORTAR/LIMPAR ==== */
 // --- Funções de Importar/Exportar/Limpar (COPIADAS E ADAPTADAS) ---
 
@@ -1413,6 +1593,8 @@ function importarDados() {
                 produtos = dadosImportados.produtos || [];
                 taxaCredito = dadosImportados.taxaCredito || {percentual: 5, incluir: false};
                 margemLucroPadrao = dadosImportados.margemLucroPadrao || 50;
+                precificacoesGeradas = dadosImportados.precificacoesGeradas || []; // **ALTERAÇÃO: Importa precificacoesGeradas**
+                proximoNumeroPrecificacao = dadosImportados.proximoNumeroPrecificacao || 1; // **ALTERAÇÃO: Importa proximoNumeroPrecificacao**
 
 
                 salvarDados();  // <-- Importante! Salva após importar.
@@ -1431,6 +1613,7 @@ function importarDados() {
                 atualizarTabelaMateriaisInsumos();
                 atualizarTabelaCustosIndiretos();
                 atualizarTabelaProdutosCadastrados();
+                atualizarTabelaPrecificacoesGeradas(); // **NOVO: Atualiza tabela de precificações**
                 atualizarPainelUltimoBackup();
 
                 // --- RECARREGAR VALORES NOS CAMPOS (MÃO DE OBRA) ---
@@ -1485,6 +1668,8 @@ function salvarDados() {
     localStorage.setItem('produtosPrecificacao', JSON.stringify(produtos));
     localStorage.setItem('taxaCreditoPrecificacao', JSON.stringify(taxaCredito)); // Salva taxaCredito
     localStorage.setItem('margemLucroPadraoPrecificacao', JSON.stringify(margemLucroPadrao)); // Salva margemLucro
+    localStorage.setItem('precificacoesGeradasPrecificacao', JSON.stringify(precificacoesGeradas)); // **NOVO: Salva precificacoesGeradas**
+    localStorage.setItem('proximoNumeroPrecificacao', JSON.stringify(proximoNumeroPrecificacao)); // **NOVO: Salva proximoNumeroPrecificacao**
 
 }
 
@@ -1497,6 +1682,8 @@ function carregarDados() {
      // CARREGA TAXA DE CRÉDITO E MARGEM DE LUCRO
     taxaCredito = JSON.parse(localStorage.getItem('taxaCreditoPrecificacao')) || {percentual: 5, incluir: false};
     margemLucroPadrao = JSON.parse(localStorage.getItem('margemLucroPadraoPrecificacao')) || 50;
+    precificacoesGeradas = JSON.parse(localStorage.getItem('precificacoesGeradasPrecificacao')) || []; // **NOVO: Carrega precificacoesGeradas**
+    proximoNumeroPrecificacao = JSON.parse(localStorage.getItem('proximoNumeroPrecificacao')) || 1; // **NOVO: Carrega proximoNumeroPrecificacao**
 
 
     // Verifica se os dados de mão de obra foram carregados e se o modo de edição deve ser ativado
@@ -1530,6 +1717,8 @@ function limparPagina() {
         localStorage.removeItem('ultimoBackup');  //  <--  ADICIONADO
         localStorage.removeItem('taxaCreditoPrecificacao'); // Remove taxaCredito
         localStorage.removeItem('margemLucroPadraoPrecificacao'); // Remove margemLucro
+        localStorage.removeItem('precificacoesGeradasPrecificacao'); // **NOVO: Remove precificacoesGeradas**
+        localStorage.removeItem('proximoNumeroPrecificacao'); // **NOVO: Remove proximoNumeroPrecificacao**
 
 
         // Resetar as variáveis
@@ -1542,17 +1731,21 @@ function limparPagina() {
         novoCustoIndiretoCounter = 0;
         taxaCredito = {percentual: 5, incluir: false}; // Reset da taxa
         margemLucroPadrao = 50; //Reset Margem de Lucro.
+        precificacoesGeradas = []; // **NOVO: Reseta precificacoesGeradas**
+        proximoNumeroPrecificacao = 1; // **NOVO: Reseta proximoNumeroPrecificacao**
 
         // Limpar as tabelas e formulários
         atualizarTabelaMateriaisInsumos();
         atualizarTabelaCustosIndiretos();
         atualizarTabelaProdutosCadastrados();
+        atualizarTabelaPrecificacoesGeradas(); // **NOVO: Limpa tabela de precificações**
         carregarCustosIndiretosPredefinidos(); // Recarrega a lista de custos indiretos (vazia)
 
         // Limpar campos de formulário específicos
         limparFormulario('form-materiais-insumos');
         limparFormulario('form-mao-de-obra');
         limparFormulario('form-produtos-cadastrados');
+        limparFormulario('form-calculo-precificacao'); // **NOVO: Limpa campo nome do cliente**
         document.querySelector('#tabela-materiais-produto tbody').innerHTML = ''; // Limpa tabela de materiais do produto
 
         // Resetar campos de mão de obra
@@ -1564,6 +1757,7 @@ function limparPagina() {
         document.getElementById('incluir-ferias-13o-sim').checked = false;
 
          // Resetar campos de cálculo
+         document.getElementById('nome-cliente').value = ''; // **NOVO: Limpa campo nome do cliente**
          document.getElementById('produto-pesquisa').value = '';
          document.getElementById('horas-produto').value = '1';
          document.getElementById('custo-produto').textContent = 'R$ 0,00';
