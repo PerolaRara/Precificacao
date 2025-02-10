@@ -285,6 +285,9 @@ td {
 }
 .quantidade-input {
   width: 60px !important; /* Ou ajuste conforme necessário */
+  background-color: #cae6e7; /* Tom azulado */
+  color: #333; /* Texto escuro para contraste */
+  font-weight: bold; /* Negrito para destacar */
 }
 
 
@@ -545,3 +548,54 @@ td {
     border-radius: 5px;
     background-color: #f5f5f5;
 }
+
+/* --- Estilos para a tabela de precificação detalhada--- */
+.tabela-precificacao-detalhada {
+    width: 95%; /* Largura um pouco menor, com margem nas laterais */
+    border-collapse: collapse;
+    margin: 20px auto; /* Centraliza e adiciona margem */
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); /* Sombra mais suave e elegante */
+    border-radius: 8px; /* Bordas um pouco arredondadas */
+    overflow: hidden; /* Garante que o border-radius funcione corretamente com o fundo */
+    font-family: 'Roboto', Arial, sans-serif; /* Garante a mesma fonte da página */
+    border-spacing: 0; /* Remove espaçamento entre bordas */
+}
+
+.tabela-precificacao-detalhada th,
+.tabela-precificacao-detalhada td {
+    border: 1px solid #ddd; /* Borda mais clara e suave */
+    padding: 10px; /* Padding um pouco maior */
+    text-align: left;
+    font-size: 0.95em; /* Tamanho da fonte ligeiramente menor */
+}
+
+.tabela-precificacao-detalhada th {
+    background-color: #7aa2a9; /* Cor de cabeçalho - Paleta de Cores (Tom mais escuro) */
+    color: white; /* Texto branco para contraste */
+    font-weight: bold;
+    text-align: center;
+    text-transform: uppercase; /* Cabeçalhos em maiúsculo (opcional) */
+    padding-top: 12px;
+    padding-bottom: 12px; /* Padding vertical maior para os cabeçalhos */
+}
+
+.tabela-precificacao-detalhada td:first-child {
+    font-weight: bold;
+    color: #555; /* Cor um pouco mais escura para os nomes dos campos */
+    width: 40%; /* Ajuste a largura da primeira coluna */
+}
+
+.tabela-precificacao-detalhada td:nth-child(2) {
+    width: 60%; /* Ajuste a largura da segunda coluna */
+}
+
+.tabela-precificacao-detalhada tbody tr:nth-child(even) { /* Linhas pares agora */
+    background-color: #f9f9f9; /* Fundo cinza muito claro para linhas pares */
+}
+
+.tabela-precificacao-detalhada tbody tr:hover {
+    background-color: #f2f2f2; /* Hover sutilmente mais escuro */
+}
+/* --- FIM - Estilos para tabela de precificação detalhada --- */
+
+
