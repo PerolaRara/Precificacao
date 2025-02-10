@@ -92,6 +92,7 @@
             <tr>
                 <th>Nome</th>
                 <th>Tipo</th>
+                <th>Dimensões/Quantidade Preenchidas</th>
                 <th>Custo Unitário (R$)</th>
                 <th>Ações</th>
             </tr>
@@ -214,6 +215,7 @@
             <tr>
                 <th>Nome do Produto</th>
                 <th>Materiais Utilizados</th>
+                <th>Custos/Dimensões do Produto</th>  <!-- NOVO CAMPO -->
                 <th>Custo Total dos Materiais (R$)</th>
                 <th>Ações</th>
             </tr>
@@ -362,6 +364,13 @@
             <!-- Precificações geradas serão listadas aqui -->
         </tbody>
     </table>
+
+    <!-- *** CONTAINER PARA DETALHE DA PRECIFICAÇÃO (ADICIONADO) *** -->
+    <div id="detalhe-precificacao-container" style="display: none; margin-top: 20px;">
+        <!-- A tabela detalhada da precificação será inserida aqui pelo Javascript -->
+    </div>
+    <!-- *** FIM DO CONTAINER *** -->
+
 </section>
 <!-- Fim da Seção Precificações Geradas -->
 
