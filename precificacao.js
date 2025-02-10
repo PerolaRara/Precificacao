@@ -1,7 +1,7 @@
 /* ==== INÍCIO SEÇÃO - VARIÁVEIS GLOBAIS ==== */
 let materiais = [];
-let maoDeObra = { salario: 0, horas: 220, valorHora: 0, incluirFerias13o: false, custoFerias13o: 0 }; // Horas padrão 220h
-let custosIndiretosPredefinidosBase = [ // This is the base template, never modified
+let maoDeObra = { salario: 0, horas: 220, valorHora: 0, incluirFerias13o: false, custoFerias13o: 0 };
+let custosIndiretosPredefinidosBase = [
     { descricao: "Energia elétrica", valorMensal: 0 },
     { descricao: "Água", valorMensal: 0 },
     { descricao: "Gás", valorMensal: 0 },
@@ -17,16 +17,18 @@ let custosIndiretosPredefinidosBase = [ // This is the base template, never modi
     { descricao: "Despesas com utilidades", valorMensal: 0 },
     { descricao: "Demais custos administrativos", valorMensal: 0 }
 ];
-let custosIndiretosPredefinidos = JSON.parse(JSON.stringify(custosIndiretosPredefinidosBase)); // Working copy, modified by user inputs
+let custosIndiretosPredefinidos = JSON.parse(JSON.stringify(custosIndiretosPredefinidosBase));
 let custosIndiretosAdicionais = [];
 let produtos = [];
 let modoEdicaoMaoDeObra = false;
 let itemEdicaoCustoIndireto = null;
-let novoCustoIndiretoCounter = 0; // Contador para IDs únicos de custos indiretos adicionais
-let taxaCredito = {percentual: 5, incluir: false}; //Objeto para taxa de crédito.  INICIALIZA COM 5%
-let margemLucroPadrao = 50; // Margem de lucro padrão.
-let precificacoesGeradas = []; // **NOVA VARIÁVEL GLOBAL**
-let proximoNumeroPrecificacao = 1; // **NOVA VARIÁVEL GLOBAL**
+let novoCustoIndiretoCounter = 0;
+let taxaCredito = { percentual: 5, incluir: false };
+let margemLucroPadrao = 50;
+let precificacoesGeradas = [];
+let proximoNumeroPrecificacao = 1;
+let produtoEmEdicao = null;
+
 /* ==== FIM SEÇÃO - VARIÁVEIS GLOBAIS ==== */
 
 /* ==== INÍCIO SEÇÃO - FUNÇÃO DE BACKUP AUTOMÁTICO ==== */
@@ -39,8 +41,8 @@ function backupAutomatico() {
         produtos,
         taxaCredito,
         margemLucroPadrao,
-        precificacoesGeradas, // **ALTERAÇÃO: Inclui precificacoesGeradas no backup**
-        proximoNumeroPrecificacao // **ALTERAÇÃO: Inclui proximoNumeroPrecificacao no backup**
+        precificacoesGeradas,
+        proximoNumeroPrecificacao
     });
     const blob = new Blob([dadosParaExportar], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -53,8 +55,7 @@ function backupAutomatico() {
     const minuto = agora.getMinutes().toString().padStart(2, '0');
     const nomeArquivo = `${ano}${mes}${dia}_${hora}${minuto}_Backup_Precificacao_Pérola_Rara.json`;
 
-    //  AGORA ATUALIZA O localStorage do último backup:
-    localStorage.setItem('ultimoBackup', JSON.stringify({ nomeArquivo, data: agora.toISOString() })); //  <--  ADICIONADO
+    localStorage.setItem('ultimoBackup', JSON.stringify({ nomeArquivo, data: agora.toISOString() }));
 
     const a = document.createElement('a');
     a.href = url;
@@ -65,19 +66,20 @@ function backupAutomatico() {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
 
-    atualizarPainelUltimoBackup();  //  <--  ADICIONADO (agora atualiza o painel)
+    atualizarPainelUltimoBackup();
 }
 /* ==== FIM SEÇÃO - FUNÇÃO DE BACKUP AUTOMÁTICO ==== */
 
 /* ==== INÍCIO SEÇÃO - FUNÇÕES AUXILIARES ==== */
-/* Formatação de valores em moeda */
 function formatarMoeda(valor) {
+    if (typeof valor !== 'number') {
+        return 'R$ 0,00';
+    }
     return valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-/* Exibir a subpágina desejada */
 function mostrarSubMenu(submenuId) {
-    const conteudos = ['materiais-insumos', 'mao-de-obra', 'custos-indiretos', 'produtos-cadastrados', 'calculo-precificacao', 'precificacoes-geradas', 'importar-exportar']; // Adicionado precificacoes-geradas
+    const conteudos = ['materiais-insumos', 'mao-de-obra', 'custos-indiretos', 'produtos-cadastrados', 'calculo-precificacao', 'precificacoes-geradas', 'importar-exportar'];
     conteudos.forEach(id => {
         const elemento = document.getElementById(id);
         if (elemento) {
@@ -90,23 +92,35 @@ function mostrarSubMenu(submenuId) {
     }
 }
 
-/* Limpar formulário */
 function limparFormulario(formId) {
     const form = document.getElementById(formId);
     if (form) {
         form.reset();
     }
 }
+
+function calcularCustoTotalItem(item) {
+    let custoTotal = 0;
+    if (item.tipo === "comprimento") {
+        custoTotal = item.material.custoUnitario * (item.comprimento / 100);
+    } else if (item.tipo === "area") {
+        custoTotal = item.material.custoUnitario * (item.largura * item.altura / 10000);
+    } else if (item.tipo === "litro") {
+        custoTotal = item.material.custoUnitario * (item.volume / 1000);
+    } else if (item.tipo === "quilo") {
+        custoTotal = item.material.custoUnitario * (item.peso / 1000);
+    } else if (item.tipo === "unidade") {
+        custoTotal = item.material.custoUnitario * item.quantidade;
+    }
+    return custoTotal;
+}
 /* ==== FIM SEÇÃO - FUNÇÕES AUXILIARES ==== */
 
 /* ==== INÍCIO SEÇÃO - EVENT LISTENERS GLOBAIS ==== */
-/* Monitorar os radios para exibir os campos corretos */
-document.addEventListener('DOMContentLoaded', () => { //  <--  AGORA É GLOBAL
-
-    //Removido isFirstLoad
+document.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('input[name="tipo-material"]').forEach(radio => {
-        radio.addEventListener('change', function() {
+        radio.addEventListener('change', function () {
             const camposComprimento = document.getElementById('campos-comprimento');
             const camposLitro = document.getElementById('campos-litro');
             const camposQuilo = document.getElementById('campos-quilo');
@@ -129,35 +143,30 @@ document.addEventListener('DOMContentLoaded', () => { //  <--  AGORA É GLOBAL
         });
     });
 
-    // --- CARREGAR DADOS (NO DOMContentLoaded GLOBAL) ---
     carregarDados();
-    carregarCustosIndiretosPredefinidos(); //  <-- Importante!
-    atualizarTabelaMateriaisInsumos();     //  <-- Importante!
-    atualizarTabelaCustosIndiretos();    //  <-- Importante!
-    atualizarTabelaProdutosCadastrados(); //  <-- Importante!
-    atualizarTabelaPrecificacoesGeradas(); // **NOVO: Atualiza tabela de precificações**
-    atualizarPainelUltimoBackup();      // <-- Importante!
+    carregarCustosIndiretosPredefinidos();
+    atualizarTabelaMateriaisInsumos();
+    atualizarTabelaCustosIndiretos();
+    atualizarTabelaProdutosCadastrados();
+    atualizarTabelaPrecificacoesGeradas();
+    atualizarPainelUltimoBackup();
 
-    //Inicializar com a seção de cálculo.  (NO DOMContentLoaded GLOBAL)
     mostrarSubMenu('calculo-precificacao');
 
-      // --- INICIALIZAÇÃO DA MARGEM DE LUCRO E TAXA DE CRÉDITO ---  (NO DOMContentLoaded GLOBAL)
-      document.getElementById('margem-lucro-final').value = margemLucroPadrao;
-      document.getElementById('taxa-credito-percentual').value = taxaCredito.percentual;
+    document.getElementById('margem-lucro-final').value = margemLucroPadrao;
+    document.getElementById('taxa-credito-percentual').value = taxaCredito.percentual;
 
-      // --- INICIALIZA O ESTADO DOS RADIOS DA TAXA --- (NO DOMContentLoaded GLOBAL)
-      if (taxaCredito.incluir) {
-          document.getElementById('incluir-taxa-credito-sim').checked = true;
-      } else {
-          document.getElementById('incluir-taxa-credito-nao').checked = true;
-      }
+    if (taxaCredito.incluir) {
+        document.getElementById('incluir-taxa-credito-sim').checked = true;
+    } else {
+        document.getElementById('incluir-taxa-credito-nao').checked = true;
+    }
 
-      // --- Dispara os eventos para calcular inicialmente --- (NO DOMContentLoaded GLOBAL)
-      calcularCustos(); // Garante que tudo seja calculado no início
-      salvarTaxaCredito();  //Para atualizar mensagem e valores corretamente.
+    calcularCustos();
+    salvarTaxaCredito();
 
-    //Para esconder o autocomplete quando clica fora.  (NO DOMContentLoaded GLOBAL)
-    document.addEventListener('click', function(event) {
+
+    document.addEventListener('click', function (event) {
         const autocompleteDiv = document.getElementById('produto-resultados');
         const inputPesquisa = document.getElementById('produto-pesquisa');
 
@@ -166,30 +175,28 @@ document.addEventListener('DOMContentLoaded', () => { //  <--  AGORA É GLOBAL
         }
     });
 
-    //Removido: marcação de página carregada.
+    document.getElementById('produto-pesquisa').addEventListener('input', buscarProdutosAutocomplete);
 });
 /* ==== FIM SEÇÃO - EVENT LISTENERS GLOBAIS ==== */
 
 /* ==== INÍCIO SEÇÃO - CÁLCULO DO CUSTO UNITÁRIO ==== */
-/* Função para calcular o custo unitário com base nas fórmulas */
 function calcularCustoUnitario(tipo, valorTotal, comprimentoCm, volumeMl, pesoG, larguraCm, alturaCm) {
     let custoUnitario = 0;
     switch (tipo) {
         case "comprimento":
-            custoUnitario = valorTotal / (comprimentoCm / 100);  // Divide por 100 para converter cm para m
+            custoUnitario = valorTotal / (comprimentoCm / 100);
             break;
         case "litro":
-            custoUnitario = valorTotal / (volumeMl / 1000); // Divide por 1000 para converter ml para L
+            custoUnitario = valorTotal / (volumeMl / 1000);
             break;
         case "quilo":
-            custoUnitario = valorTotal / (pesoG / 1000);  // Divide por 1000 para converter g para kg
+            custoUnitario = valorTotal / (pesoG / 1000);
             break;
         case "unidade":
             custoUnitario = valorTotal;
             break;
         case "area":
-            // A área já é calculada em m² em cadastrarMaterialInsumo
-            custoUnitario = valorTotal / ((larguraCm/100) * (alturaCm/100)); // Divide o valor total pela área em m²
+            custoUnitario = valorTotal / ((larguraCm / 100) * (alturaCm / 100));
             break;
     }
     return custoUnitario;
@@ -197,273 +204,190 @@ function calcularCustoUnitario(tipo, valorTotal, comprimentoCm, volumeMl, pesoG,
 /* ==== FIM SEÇÃO - CÁLCULO DO CUSTO UNITÁRIO ==== */
 
 /* ==== INÍCIO SEÇÃO - CADASTRO DE MATERIAL/INSUMO ==== */
-/* Cadastrar Material/Insumo */
 function cadastrarMaterialInsumo() {
-    const nome = document.getElementById('nome-material').value.trim();
-    const valorTotal = parseFloat(document.getElementById('valor-total-material').value);
+    const nome = document.getElementById('nome-material').value;
     const tipo = document.querySelector('input[name="tipo-material"]:checked').value;
-    let comprimentoCm = 0, volumeMl = 0, pesoG = 0, larguraCm = 0, alturaCm = 0;
+    const valorTotal = parseFloat(document.getElementById('valor-total-material').value);
+    const comprimentoCm = (tipo === 'comprimento') ? parseFloat(document.getElementById('comprimento-cm').value) : 0;
+    const volumeMl = (tipo === 'litro') ? parseFloat(document.getElementById('volume-ml').value) : 0;
+    const pesoG = (tipo === 'quilo') ? parseFloat(document.getElementById('peso-g').value) : 0;
+    const larguraCm = (tipo === 'area') ? parseFloat(document.getElementById('largura-cm').value) : 0;
+    const alturaCm = (tipo === 'area') ? parseFloat(document.getElementById('altura-cm').value) : 0;
 
-    // --- Validação de entrada ---
-    if (!nome) {
-        alert("Por favor, insira um nome para o material.");
-        return;
-    }
-    if (isNaN(valorTotal) || valorTotal <= 0) {
-        alert("Por favor, insira um valor total válido (maior que zero).");
-        return;
-    }
-
-    // --- Coleta e validação de dimensões ---
-    if (tipo === 'comprimento') {
-        comprimentoCm = parseFloat(document.getElementById('comprimento-cm').value);
-        if (isNaN(comprimentoCm) || comprimentoCm <= 0) {
-            alert("Por favor, insira um comprimento válido (maior que zero).");
-            return;
-        }
-    } else if (tipo === 'litro') {
-        volumeMl = parseFloat(document.getElementById('volume-ml').value);
-        if (isNaN(volumeMl) || volumeMl <= 0) {
-            alert("Por favor, insira um volume válido (maior que zero).");
-            return;
-        }
-    } else if (tipo === 'quilo') {
-        pesoG = parseFloat(document.getElementById('peso-g').value);
-        if (isNaN(pesoG) || pesoG <= 0) {
-            alert("Por favor, insira um peso válido (maior que zero).");
-            return;
-        }
-    } else if (tipo === 'area') {
-        larguraCm = parseFloat(document.getElementById('largura-cm').value);
-        alturaCm = parseFloat(document.getElementById('altura-cm').value);
-        if (isNaN(larguraCm) || larguraCm <= 0 || isNaN(alturaCm) || alturaCm <= 0) {
-            alert("Por favor, insira dimensões válidas para a área (maiores que zero).");
-            return;
-        }
-    }
-
-    // --- Cálculo do Custo Unitário ---
     const custoUnitario = calcularCustoUnitario(tipo, valorTotal, comprimentoCm, volumeMl, pesoG, larguraCm, alturaCm);
 
-    // --- Criação do objeto do material ---
-    const item = {
+    const material = {
         nome,
         tipo,
-        custoUnitario,
+        valorTotal,
         comprimentoCm,
         volumeMl,
         pesoG,
         larguraCm,
-        alturaCm
+        alturaCm,
+        custoUnitario
     };
 
-    // 1. Adiciona o item ao array de materiais.
-    materiais.push(item);
-
-    // *** ADICIONADO AQUI: Atualizar produtos que usam este material ***
-    atualizarProdutosComMaterial(nome); // Passa o nome do material alterado
-
-    // 2. Atualiza a tabela *ANTES* de resetar o formulário.
+    materiais.push(material);
     atualizarTabelaMateriaisInsumos();
-
-    // 3. Limpa *todos* os campos do formulário.
     limparFormulario('form-materiais-insumos');
 
-    // 4. Reseta o título do formulário.
-    document.getElementById('titulo-materiais-insumos').textContent = "Cadastro de Materiais e Insumos";
+    const produtosImpactados = produtos.filter(produto =>
+        produto.materiais.some(item => item.material.nome === material.nome)
+    );
 
-    // 5. Seleciona o radio button "Comprimento" *e* dispara o evento 'change'.
-    const radioComprimento = document.querySelector('input[name="tipo-material"][value="comprimento"]');
-    radioComprimento.checked = true;
-    radioComprimento.dispatchEvent(new Event('change')); // <-- Importante!
-
-    // 6. Garante que o placeholder do comprimento esteja correto (cm).
-    document.getElementById('comprimento-cm').placeholder = "Comprimento (cm)";
-
-    // --- SALVAR DADOS e BACKUP AUTOMÁTICO (após adicionar material) ---
-    salvarDados();
-    backupAutomatico(); // <-- Chamada da função de backup
-}
-
-/* Função para atualizar produtos que usam um material alterado */
-function atualizarProdutosComMaterial(nomeMaterialAlterado) {
-    produtos.forEach(produto => {
-        produto.materiais.forEach(materialDoProduto => {
-            if (materialDoProduto.nome === nomeMaterialAlterado) {
-                // Encontrar o material atualizado na lista global de materiais
-                const materialAtualizado = materiais.find(mat => mat.nome === nomeMaterialAlterado);
-                if (materialAtualizado) {
-                    // Atualizar o custo unitário do material no produto
-                    materialDoProduto.custoUnitario = materialAtualizado.custoUnitario;
-
-                    // Recalcular o custo total do material no produto (mantendo dimensões/quantidade)
-                    let custoTotalMaterial = 0;
-                    if (materialDoProduto.tipo === 'Área') {
-                        const area = (materialDoProduto.largura * materialDoProduto.altura) / 10000; // em m²
-                        custoTotalMaterial = materialDoProduto.custoUnitario * area;
-                    } else if (materialDoProduto.tipo === 'Comprimento') {
-                        const comprimentoEmMetros = materialDoProduto.comprimento / 100; // em metros
-                        custoTotalMaterial = materialDoProduto.custoUnitario * comprimentoEmMetros;
-                    } else {
-                        custoTotalMaterial = materialDoProduto.custoUnitario * materialDoProduto.quantidade;
-                    }
-                    materialDoProduto.custoTotal = custoTotalMaterial;
-                }
+    produtosImpactados.forEach(produto => {
+        produto.materiais.forEach(item => {
+            if (item.material.nome === material.nome && item.tipo === material.tipo) {
+                item.material.custoUnitario = material.custoUnitario;
+                item.custoTotal = calcularCustoTotalItem(item);
             }
         });
-        // Recalcular o custo total de materiais do produto
-        produto.custoMateriais = produto.materiais.reduce((total, material) => total + material.custoTotal, 0);
+        produto.custoTotal = produto.materiais.reduce((total, item) => total + item.custoTotal, 0);
     });
 
-    // Atualizar a tabela de produtos cadastrados
+    salvarDados();
     atualizarTabelaProdutosCadastrados();
+    backupAutomatico(); // Backup automático ao cadastrar material
 
-    // Verificar se o produto está selecionado na seção de cálculo e atualizar se estiver
-    const nomeProdutoSelecionado = document.getElementById('produto-pesquisa').value;
-    if (nomeProdutoSelecionado) {
-        carregarDadosProduto(nomeProdutoSelecionado);
+    const produtoSelecionadoNome = document.getElementById('produto-pesquisa').value;
+    if(produtoSelecionadoNome){
+        const produtoSelecionado = produtos.find(p => p.nome === produtoSelecionadoNome);
+        if(produtoSelecionado){
+            carregarDadosProduto(produtoSelecionado);
+            calcularCustos();
+        }
     }
 }
 /* ==== FIM SEÇÃO - CADASTRO DE MATERIAL/INSUMO ==== */
 
 /* ==== INÍCIO SEÇÃO - TABELA DE MATERIAL/INSUMO ==== */
-
 function atualizarTabelaMateriaisInsumos() {
     const tbody = document.querySelector('#tabela-materiais-insumos tbody');
     tbody.innerHTML = '';
-    materiais.forEach((item, index) => {
+
+    materiais.forEach((material, index) => {
         const row = tbody.insertRow();
-        const cellNome = row.insertCell();
-        const cellTipo = row.insertCell();
-        const cellCustoUnit = row.insertCell();
+
+        row.insertCell().textContent = material.nome;
+        row.insertCell().textContent = material.tipo;
+
+        let dimensoes = '';
+        switch (material.tipo) {
+            case 'comprimento':
+                dimensoes = `${material.comprimentoCm} cm`;
+                break;
+            case 'litro':
+                dimensoes = `${material.volumeMl} ml`;
+                break;
+            case 'quilo':
+                dimensoes = `${material.pesoG} g`;
+                break;
+            case 'unidade':
+                dimensoes = 'N/A';
+                break;
+            case 'area':
+                dimensoes = `${material.larguraCm} x ${material.alturaCm} cm`;
+                break;
+        }
+        row.insertCell().textContent = dimensoes;
+        row.insertCell().textContent = formatarMoeda(material.custoUnitario);
+
         const cellAcoes = row.insertCell();
-
-        cellNome.textContent = item.nome;
-        cellTipo.textContent =
-            (item.tipo === 'comprimento' ? 'Comprimento (Metro)' :
-                item.tipo === 'litro' ? 'Litro' :
-                    item.tipo === 'quilo' ? 'Quilo' :
-                        item.tipo === 'area' ? 'Área (m²)' : 'Unidade');
-        cellCustoUnit.textContent = formatarMoeda(item.custoUnitario);
-
-        // Botão Editar
-        const botaoEditar = document.createElement('button');
-        botaoEditar.textContent = 'Editar';
-        botaoEditar.addEventListener('click', function() {
-            editarMaterialInsumo(index);
-        });
-        cellAcoes.appendChild(botaoEditar);
-
-        // Botão Remover
-        const botaoRemover = document.createElement('button');
-        botaoRemover.textContent = 'Remover';
-        botaoRemover.addEventListener('click', function() {
-            removerMaterialInsumo(index);
-        });
-        cellAcoes.appendChild(botaoRemover);
+        const btnEditar = document.createElement('button');
+        btnEditar.textContent = 'Editar';
+        btnEditar.onclick = () => editarMaterialInsumo(index);
+        const btnRemover = document.createElement('button');
+        btnRemover.textContent = 'Remover';
+        btnRemover.onclick = () => removerMaterialInsumo(index);
+        cellAcoes.appendChild(btnEditar);
+        cellAcoes.appendChild(btnRemover);
     });
-
-    // REMOVIDO: salvarDados();  Não precisa salvar aqui.
-    // REMOVIDO: backupAutomatico(); Não precisa de backup aqui.
 }
 
-// Função para buscar materiais cadastrados
+
 function buscarMateriaisCadastrados() {
     const termoBusca = document.getElementById('busca-material').value.toLowerCase();
     const tbody = document.querySelector('#tabela-materiais-insumos tbody');
     tbody.innerHTML = '';
 
-    const materiaisFiltrados = materiais.filter(item => item.nome.toLowerCase().includes(termoBusca));
-
-    materiaisFiltrados.forEach((item, index) => {
+    materiais.filter(material => material.nome.toLowerCase().includes(termoBusca)).forEach((material, index) => {
         const row = tbody.insertRow();
-        const cellNome = row.insertCell();
-        const cellTipo = row.insertCell();
-        const cellCustoUnit = row.insertCell();
+
+        row.insertCell().textContent = material.nome;
+        row.insertCell().textContent = material.tipo;
+
+        let dimensoes = '';
+            switch (material.tipo) {
+                case 'comprimento':
+                    dimensoes = `${material.comprimentoCm} cm`;
+                    break;
+                case 'litro':
+                    dimensoes = `${material.volumeMl} ml`;
+                    break;
+                case 'quilo':
+                    dimensoes = `${material.pesoG} g`;
+                    break;
+                case 'unidade':
+                    dimensoes = 'N/A';
+                    break;
+                case 'area':
+                    dimensoes = `${material.larguraCm} x ${material.alturaCm} cm`;
+                    break;
+            }
+        row.insertCell().textContent = dimensoes;
+        row.insertCell().textContent = formatarMoeda(material.custoUnitario);
+
         const cellAcoes = row.insertCell();
-
-        cellNome.textContent = item.nome;
-        cellTipo.textContent = item.tipo;
-        cellCustoUnit.textContent = formatarMoeda(item.custoUnitario);
-
-        // Botão Editar
-        const botaoEditar = document.createElement('button');
-        botaoEditar.textContent = 'Editar';
-        botaoEditar.addEventListener('click', function() {
-            editarMaterialInsumo(index);
-        });
-        cellAcoes.appendChild(botaoEditar);
-
-        // Botão Remover
-        const botaoRemover = document.createElement('button');
-        botaoRemover.textContent = 'Remover';
-        botaoRemover.addEventListener('click', function() {
-            removerMaterialInsumo(index);
-        });
-        cellAcoes.appendChild(botaoRemover);
+        const btnEditar = document.createElement('button');
+        btnEditar.textContent = 'Editar';
+        btnEditar.onclick = () => editarMaterialInsumo(index);
+        const btnRemover = document.createElement('button');
+        btnRemover.textContent = 'Remover';
+        btnRemover.onclick = () => removerMaterialInsumo(index);
+        cellAcoes.appendChild(btnEditar);
+        cellAcoes.appendChild(btnRemover);
     });
 }
 
+
 function editarMaterialInsumo(index) {
-    const item = materiais[index];
+    const material = materiais[index];
 
-    // --- Preenche os campos do formulário ---
-    document.getElementById('nome-material').value = item.nome;
+    document.getElementById('nome-material').value = material.nome;
+    document.querySelector(`input[name="tipo-material"][value="${material.tipo}"]`).checked = true;
+    document.getElementById('valor-total-material').value = material.valorTotal;
 
-    // --- Cálculo e preenchimento do valor total original ---
-    let valorTotalOriginal = 0;
-    if (item.tipo === 'comprimento') {
-        valorTotalOriginal = item.custoUnitario * (item.comprimentoCm / 100); // Recalcula valor total original para Comprimento
-    } else if (item.tipo === 'litro') {
-        valorTotalOriginal = item.custoUnitario * (item.volumeMl / 1000); // Recalcula valor total original para Litro
-    } else if (item.tipo === 'quilo') {
-        valorTotalOriginal = item.custoUnitario * (item.pesoG / 1000);   // Recalcula valor total original para Quilo
-    } else if (item.tipo === 'area') {
-        valorTotalOriginal = item.custoUnitario * ((item.larguraCm / 100) * (item.alturaCm / 100)); // Recalcula valor total original para Área
-    } else { // unidade
-        valorTotalOriginal = item.custoUnitario; // Para unidade, o custo unitário já é o valor total
-    }
-    document.getElementById('valor-total-material').value = valorTotalOriginal.toFixed(2); // Preenche com o valor total ORIGINAL
-
-
-    // Seleciona o radio button correto *e* dispara o evento 'change'
-    const radio = document.querySelector(`input[name="tipo-material"][value="${item.tipo}"]`);
-    radio.checked = true;
-    radio.dispatchEvent(new Event('change')); //  <-- Importante!
-
-    // Preenche os campos de dimensão (se existirem)
-    if (item.tipo === 'comprimento') {
-        document.getElementById('comprimento-cm').value = item.comprimentoCm;
-    } else if (item.tipo === 'litro') {
-        document.getElementById('volume-ml').value = item.volumeMl;
-    } else if (item.tipo === 'quilo') {
-        document.getElementById('peso-g').value = item.pesoG;
-    } else if (item.tipo === 'area') {
-        document.getElementById('largura-cm').value = item.larguraCm;
-        document.getElementById('altura-cm').value = item.alturaCm;
+    document.querySelectorAll('.form-group[id^="campos-"]').forEach(el => el.style.display = 'none');
+    if (material.tipo === 'comprimento') {
+        document.getElementById('campos-comprimento').style.display = 'block';
+        document.getElementById('comprimento-cm').value = material.comprimentoCm;
+    } else if (material.tipo === 'litro') {
+        document.getElementById('campos-litro').style.display = 'block';
+        document.getElementById('volume-ml').value = material.volumeMl;
+    } else if (material.tipo === 'quilo') {
+        document.getElementById('campos-quilo').style.display = 'block';
+        document.getElementById('peso-g').value = material.pesoG;
+    } else if (material.tipo === 'area') {
+        document.getElementById('campos-area').style.display = 'block';
+        document.getElementById('largura-cm').value = material.larguraCm;
+        document.getElementById('altura-cm').value = material.alturaCm;
     }
 
-    // --- Remove o item original (vai ser readicionado no final do cadastro) ---
-    materiais.splice(index, 1);
-    atualizarTabelaMateriaisInsumos();
-
-    // --- Scroll e foco ---
-    document.getElementById('materiais-insumos').scrollIntoView({ behavior: 'smooth' });
-     document.getElementById('titulo-materiais-insumos').textContent = 'Editar Material/Insumo';
-     //  NÃO CHAMA backupAutomatico() aqui!  O backup será feito quando o usuário clicar em "Cadastrar" (que agora funciona como "Salvar Edição").
+     removerMaterialInsumo(index);
 }
 
 function removerMaterialInsumo(index) {
     materiais.splice(index, 1);
     atualizarTabelaMateriaisInsumos();
-    salvarDados();        //  <--  CORRETO (já existia)
-    backupAutomatico(); //  <--  ADICIONADO!
+     salvarDados();
 }
 /* ==== FIM SEÇÃO - TABELA DE MATERIAL/INSUMO ==== */
 
 /* ==== INÍCIO SEÇÃO - MÃO DE OBRA ==== */
 // --- Mão de Obra ---
 function calcularValorHora() {
+    // Idea 1 & 2: Simpler calculation and direct value setting, anonymous event listeners
     const salario = parseFloat(document.getElementById('salario-receber').value);
     const horas = parseInt(document.getElementById('horas-trabalhadas').value);
 
@@ -478,6 +402,7 @@ function calcularValorHora() {
 }
 
 function calcularCustoFerias13o() {
+     // Idea 1 & 2: Simpler calculation and direct value setting, anonymous event listeners
     const salario = parseFloat(document.getElementById('salario-receber').value);
     const horas = parseInt(document.getElementById('horas-trabalhadas').value);
     const incluir = document.getElementById('incluir-ferias-13o-sim').checked;
@@ -500,7 +425,7 @@ function salvarMaoDeObra() {
 
     maoDeObra.salario = parseFloat(document.getElementById('salario-receber').value);
     maoDeObra.horas = parseInt(document.getElementById('horas-trabalhadas').value);
-    maoDeObra.valorHora = valorHora;
+    maoDeObra.valorHora = calcularValorHora();
     maoDeObra.incluirFerias13o = document.getElementById('incluir-ferias-13o-sim').checked;
     maoDeObra.custoFerias13o = calcularCustoFerias13o();
 
@@ -519,12 +444,10 @@ function salvarMaoDeObra() {
     document.getElementById('salario-receber').readOnly = true;
     document.getElementById('horas-trabalhadas').readOnly = true;
 
-     atualizarTabelaCustosIndiretos(); // <---  Atualiza após salvar
-     calcularCustos(); // Importante para atualizar a seção de cálculo
+     atualizarTabelaCustosIndiretos();
+     calcularCustos();
 
-     // --- SALVAR DADOS e BACKUP (após salvar mão de obra) ---
      salvarDados();
-     backupAutomatico(); // <-- JÁ ESTAVA CORRETO (você já tinha adicionado)
 }
 
 function editarMaoDeObra() {
@@ -538,10 +461,9 @@ function editarMaoDeObra() {
 
     document.getElementById('mao-de-obra').scrollIntoView({ behavior: 'smooth' });
     document.getElementById('titulo-mao-de-obra').textContent = 'Informações sobre custo de mão de obra';
-     // NÃO chama salvarDados() nem backupAutomatico() aqui!
-    // O backup será feito quando o usuário clicar em "Salvar".
 }
 
+// Idea 2: Simplified Event Listeners (Anonymous functions, direct calls)
 document.getElementById('salario-receber').addEventListener('input', function(){
     calcularValorHora();
     calcularCustoFerias13o();
@@ -549,21 +471,18 @@ document.getElementById('salario-receber').addEventListener('input', function(){
 document.getElementById('horas-trabalhadas').addEventListener('input', function(){
     calcularValorHora();
     calcularCustoFerias13o();
-    atualizarTabelaCustosIndiretos(); // <--- Atualiza a tabela aqui!
-    calcularCustos();  // <-- Importantíssimo! Recalcula após mudar horas
+    atualizarTabelaCustosIndiretos();
+    calcularCustos();
 });
 /* ==== FIM SEÇÃO - MÃO DE OBRA ==== */
 
 /* ==== INÍCIO SEÇÃO - CUSTOS INDIRETOS ==== */
-// --- Custos Indiretos ---
-
 function carregarCustosIndiretosPredefinidos() {
     const listaCustos = document.getElementById('lista-custos-indiretos');
     listaCustos.innerHTML = '';
 
     custosIndiretosPredefinidosBase.forEach((custoBase, index) => {
         const listItem = document.createElement('li');
-        // Encontra o custo correspondente ou usa o custo base
         const custoAtual = custosIndiretosPredefinidos.find(c => c.descricao === custoBase.descricao) || { ...custoBase };
         listItem.innerHTML = `
             <div class="custo-item-nome">${custoBase.descricao}</div>
@@ -573,10 +492,9 @@ function carregarCustosIndiretosPredefinidos() {
         listaCustos.appendChild(listItem);
     });
 
-    // Custos Adicionais
     custosIndiretosAdicionais.forEach((custo) => {
         const listItem = document.createElement('li');
-        listItem.dataset.index = custo.tempIndex; // Importante para identificar na remoção
+        listItem.dataset.index = custo.tempIndex;
         listItem.innerHTML = `
             <div class="custo-item-nome">${custo.descricao}</div>
             <input type="number" value="${custo.valorMensal.toFixed(2)}" step="0.01">
@@ -587,25 +505,21 @@ function carregarCustosIndiretosPredefinidos() {
     });
 
     atualizarTabelaCustosIndiretos();
-    // REMOVIDO: salvarDados();  <- Não precisa salvar aqui
-    // REMOVIDO: backupAutomatico(); <- Não precisa de backup aqui
 }
 
 function salvarCustoIndiretoPredefinido(index) {
     const inputValor = document.getElementById(`custo-indireto-${index}`);
     const novoValor = parseFloat(inputValor.value);
-    const descricao = custosIndiretosPredefinidosBase[index].descricao;  //Pega a descrição da base
+    const descricao = custosIndiretosPredefinidosBase[index].descricao;
 
     if (!isNaN(novoValor)) {
-        // Atualiza o custo predefinido, usando a descrição para encontrar o objeto correto
         const custoParaAtualizar = custosIndiretosPredefinidos.find(c => c.descricao === descricao);
         if(custoParaAtualizar){
             custoParaAtualizar.valorMensal = novoValor;
         }
         atualizarTabelaCustosIndiretos();
-        calcularCustos(); // <-- Importante! Recalcula após salvar custo indireto
-        salvarDados();   // <-- Salva após modificar
-        backupAutomatico(); // <-- Adicionado!
+        calcularCustos();
+        salvarDados();
     } else {
         alert("Por favor, insira um valor numérico válido.");
     }
@@ -613,15 +527,14 @@ function salvarCustoIndiretoPredefinido(index) {
 
 function adicionarNovoCustoIndireto() {
     const listaCustos = document.getElementById('lista-custos-indiretos');
-    const novoIndex = `novoCusto-${novoCustoIndiretoCounter++}`; // ID único
-
     const listItem = document.createElement('li');
-    listItem.dataset.index = novoIndex;  // Armazena o ID
+    const id = `novo-custo-${novoCustoIndiretoCounter++}`;
+    listItem.dataset.index = id;
     listItem.innerHTML = `
         <input type="text" class="custo-item-nome" placeholder="Descrição do novo custo">
         <input type="number" value="0.00" step="0.01">
-        <button onclick="salvarNovoCustoIndiretoLista(this)" data-index="${novoIndex}">Salvar</button>
-        <button onclick="removerNovoCustoIndiretoLista(this)" data-index="${novoIndex}">Remover</button>
+        <button onclick="salvarNovoCustoIndiretoLista(this)" data-index="${id}">Salvar</button>
+        <button onclick="removerNovoCustoIndiretoLista(this)" data-index="${id}">Remover</button>
     `;
     listaCustos.appendChild(listItem);
 }
@@ -630,26 +543,22 @@ function salvarNovoCustoIndiretoLista(botao) {
     const listItem = botao.parentNode;
     const descricaoInput = listItem.querySelector('.custo-item-nome');
     const valorInput = listItem.querySelector('input[type="number"]');
-    const index = botao.dataset.index; // Recupera o ID
+    const index = botao.dataset.index;
 
     const descricao = descricaoInput.value.trim();
     const valorMensal = parseFloat(valorInput.value);
 
     if (descricao && !isNaN(valorMensal)) {
-        // Procura se o custo já existe
         const custoExistenteIndex = custosIndiretosAdicionais.findIndex(c => c.tempIndex === index);
 
         if (custoExistenteIndex !== -1) {
-            // Atualiza o custo existente
             custosIndiretosAdicionais[custoExistenteIndex] = { descricao: descricao, valorMensal: valorMensal, tempIndex: index };
         } else {
-            // Adiciona o novo custo
             custosIndiretosAdicionais.push({ descricao: descricao, valorMensal: valorMensal, tempIndex: index });
         }
-        atualizarTabelaCustosIndiretos(); // Atualiza a tabela
-        calcularCustos();  // <-- Importante!
-        salvarDados();  // <-- Importante! Salva após modificar
-        backupAutomatico(); // <-- Adicionado!
+        atualizarTabelaCustosIndiretos();
+        calcularCustos();
+        salvarDados();
 
     } else {
         alert("Por favor, preencha a descrição e insira um valor numérico válido.");
@@ -658,15 +567,13 @@ function salvarNovoCustoIndiretoLista(botao) {
 
 function removerNovoCustoIndiretoLista(botaoRemover) {
     const listItem = botaoRemover.parentNode;
-    const indexToRemove = botaoRemover.dataset.index; // Recupera o ID
+    const indexToRemove = botaoRemover.dataset.index;
 
-    // Filtra o array, removendo o item com o ID correto
     custosIndiretosAdicionais = custosIndiretosAdicionais.filter(custo => custo.tempIndex !== indexToRemove);
     listItem.remove();
     atualizarTabelaCustosIndiretos();
-    calcularCustos(); // <-- Importante!
-    salvarDados();  // <-- Importante! Salva após remover
-    backupAutomatico(); // <-- Adicionado!
+    calcularCustos();
+    salvarDados();
 }
 
 function atualizarTabelaCustosIndiretos() {
@@ -678,16 +585,13 @@ function atualizarTabelaCustosIndiretos() {
         const row = tbody.insertRow();
         const cellMensagem = row.insertCell();
         cellMensagem.textContent = "Preencha as 'Horas trabalhadas por mês' no menu 'Custo de Mão de Obra' para calcular o custo por hora.";
-        cellMensagem.colSpan = 4; // Ocupa todas as colunas
-        return; // Sai da função, pois não há como calcular
+        cellMensagem.colSpan = 4;
+        return;
     }
 
-    // Filtra os custos para exibir apenas os que têm valor maior que zero
     const custosPredefinidosParaExibir = custosIndiretosPredefinidos.filter(custo => custo.valorMensal > 0);
     const custosAdicionaisParaExibir = custosIndiretosAdicionais.filter(custo => custo.valorMensal > 0);
 
-
-    // Adiciona os custos predefinidos (somente os filtrados)
     custosPredefinidosParaExibir.forEach((custo, index) => {
         const row = tbody.insertRow();
         const cellDescricao = row.insertCell();
@@ -700,14 +604,12 @@ function atualizarTabelaCustosIndiretos() {
         const valorPorHora = custo.valorMensal / horasTrabalhadas;
         cellValorHoraTrabalhada.textContent = formatarMoeda(valorPorHora);
 
-        // Botão Zerar
         const botaoZerar = document.createElement('button');
         botaoZerar.textContent = 'Zerar';
         botaoZerar.onclick = () => zerarCustoIndireto(index, 'predefinido');
         cellAcoes.appendChild(botaoZerar);
     });
 
-    // Adiciona os custos adicionais (somente os filtrados)
     custosAdicionaisParaExibir.forEach((custo) => {
         const row = tbody.insertRow();
         const cellDescricao = row.insertCell();
@@ -720,34 +622,26 @@ function atualizarTabelaCustosIndiretos() {
         const valorPorHora = custo.valorMensal / horasTrabalhadas;
         cellValorHoraTrabalhada.textContent = formatarMoeda(valorPorHora);
 
-        // Botão Zerar para custos adicionais
         const botaoZerar = document.createElement('button');
         botaoZerar.textContent = 'Zerar';
-        botaoZerar.onclick = () => zerarCustoIndireto(custo.tempIndex, 'adicional'); // Passa o tempIndex
+        botaoZerar.onclick = () => zerarCustoIndireto(custo.tempIndex, 'adicional');
         cellAcoes.appendChild(botaoZerar);
     });
-
-    // REMOVIDO: salvarDados(); Não precisa salvar aqui
-    // REMOVIDO: backupAutomatico(); Não precisa de backup aqui.
 }
 
 function zerarCustoIndireto(indexOuTempIndex, tipo) {
     if (tipo === 'predefinido') {
-        // Zera um custo predefinido
         custosIndiretosPredefinidos[indexOuTempIndex].valorMensal = 0;
-        // Atualiza o valor no input correspondente
         document.getElementById(`custo-indireto-${indexOuTempIndex}`).value = '0.00';
     } else if (tipo === 'adicional') {
-        // Zera um custo adicional
         const custoAdicionalIndex = custosIndiretosAdicionais.findIndex(c => c.tempIndex === indexOuTempIndex);
         if (custoAdicionalIndex !== -1) {
             custosIndiretosAdicionais[custoAdicionalIndex].valorMensal = 0;
         }
     }
-    atualizarTabelaCustosIndiretos(); // Atualiza a tabela após zerar
-    calcularCustos(); // <-- Importante!
-    salvarDados();  // <-- Importante! Salva após zerar
-    backupAutomatico(); // <-- Adicionado!
+    atualizarTabelaCustosIndiretos();
+    calcularCustos();
+    salvarDados();
 }
 
 function buscarCustosIndiretosCadastrados() {
@@ -771,7 +665,6 @@ function buscarCustosIndiretosCadastrados() {
         const originalIndexPredefinidos = custosIndiretosPredefinidos.findIndex(c => c.descricao === custo.descricao);
         const originalAdicional = custosIndiretosAdicionais.find(c => c.descricao === custo.descricao && c.tempIndex === custo.tempIndex);
 
-
         if (custo.valorMensal > 0 || originalAdicional) {
             const row = tbody.insertRow();
             const cellDescricao = row.insertCell();
@@ -785,7 +678,6 @@ function buscarCustosIndiretosCadastrados() {
             const valorPorHora = custo.valorMensal / horasTrabalhadas;
             cellValorHoraTrabalhada.textContent = formatarMoeda(valorPorHora);
 
-            // Usa o tipo e o índice/tempIndex corretos
             let botaoAcao;
             if (originalIndexPredefinidos !== -1) {
                 botaoAcao = document.createElement('button');
@@ -793,12 +685,11 @@ function buscarCustosIndiretosCadastrados() {
                 botaoAcao.onclick = function() { zerarCustoIndireto(originalIndexPredefinidos, 'predefinido'); };
             } else if (originalAdicional) {
                 botaoAcao = document.createElement('button');
-                botaoAcao.textContent = 'Zerar'; // Usa "Zerar" em vez de "Remover"
+                botaoAcao.textContent = 'Zerar';
                 botaoAcao.onclick = function() { zerarCustoIndireto(custo.tempIndex, 'adicional'); };
             }
 
             cellAcoes.appendChild(botaoAcao);
-
         }
     });
 }
@@ -806,482 +697,539 @@ function buscarCustosIndiretosCadastrados() {
 /* ==== FIM SEÇÃO - CUSTOS INDIRETOS ==== */
 
 /* ==== INÍCIO SEÇÃO - PRODUTOS CADASTRADOS ==== */
-// --- Produtos Cadastrados ---
 function cadastrarProduto() {
     const nomeProduto = document.getElementById('nome-produto').value;
-    const tabelaMateriaisProduto = document.getElementById('tabela-materiais-produto').querySelector('tbody');
-    const linhasMateriais = tabelaMateriaisProduto.rows;
-
-    if (!nomeProduto || linhasMateriais.length === 0) {
-        alert("Por favor, preencha o nome do produto e adicione pelo menos um material.");
+    if (!nomeProduto) {
+        alert('Por favor, insira um nome para o produto.');
         return;
     }
 
-    let materiaisDoProduto = [];
-    let custoTotalMateriaisProduto = 0;
+    // Coleta os materiais da tabela
+    const materiaisProduto = [];
+    const linhasTabela = document.querySelectorAll('#tabela-materiais-produto tbody tr');
+    linhasTabela.forEach(linha => {
+        let nomeMaterial = linha.cells[0].textContent;
+        const tipoMaterial = linha.cells[1].textContent;
+        const custoUnitario = parseFloat(linha.cells[2].textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.'));
 
-    for (let i = 0; i < linhasMateriais.length; i++) {
-        const linha = linhasMateriais[i];
-        const nomeMaterial = linha.cells[0].textContent;
-        const tipoMaterial = linha.cells[1].textContent.split(' ')[0]; // Pega só a primeira parte (tipo)
-        const custoUnitarioMaterial = parseFloat(linha.cells[2].textContent.replace(/[^\d.,-]/g, '').replace('.', '').replace(',', '.'));
-
-        // --- DIMENSÕES (agora em sua própria célula) ---
-        const larguraInput = linha.cells[3].querySelector('.dimensoes-input.largura');
-        const alturaInput = linha.cells[3].querySelector('.dimensoes-input.altura');
-        const comprimentoInput = linha.cells[3].querySelector('.dimensoes-input.comprimento'); //Se for comprimento
-
-        const largura = larguraInput ? parseFloat(larguraInput.value) : 0;
-        const altura = alturaInput ? parseFloat(alturaInput.value) : 0;
-        const comprimento = comprimentoInput? parseFloat(comprimentoInput.value) : 0;
-
-
-        // --- QUANTIDADE (agora separada das dimensões) ---
-        const quantidadeInput = linha.cells[4].querySelector('.quantidade-input');  // Célula 4
-        let quantidadeMaterial = quantidadeInput ? parseFloat(quantidadeInput.value) : 0;
-
-
-        // --- CÁLCULO DO CUSTO TOTAL (CORREÇÃO AQUI) ---
-        let custoTotalMaterial = 0;
-        if (tipoMaterial === 'Área') {
-            const area = (largura * altura) / 10000; // Calcula a área em m²
-            custoTotalMaterial = custoUnitarioMaterial * area;
-        } else if (tipoMaterial === 'Comprimento') {
-            // CONVERTE comprimento de cm para m ANTES de calcular o custo
-            const comprimentoEmMetros = comprimento / 100;
-            custoTotalMaterial = custoUnitarioMaterial * comprimentoEmMetros; // Usa o comprimento em METROS
-        } else {
-            custoTotalMaterial = custoUnitarioMaterial * quantidadeMaterial;
+        // Recupera os valores das dimensões/quantidades
+        let comprimento, largura, altura, volume, peso, quantidade;
+        if (tipoMaterial === "comprimento") {
+            comprimento = parseFloat(linha.querySelector('.dimensoes-input').value);
+        } else if (tipoMaterial === "area") {
+            largura = parseFloat(linha.querySelectorAll('.dimensoes-input')[0].value);
+            altura = parseFloat(linha.querySelectorAll('.dimensoes-input')[1].value);
+        } else if (tipoMaterial === "litro") {
+            volume = parseFloat(linha.querySelector('.dimensoes-input').value);
+        } else if (tipoMaterial === "quilo") {
+            peso = parseFloat(linha.querySelector('.dimensoes-input').value);
+        } else if (tipoMaterial === "unidade") {
+            quantidade = parseFloat(linha.querySelector('.dimensoes-input').value);
         }
 
+        quantidade = parseFloat(linha.querySelector('.quantidade-input').value);
 
-        materiaisDoProduto.push({
-            nome: nomeMaterial,
+        // Encontra o material original
+        const materialOriginal = materiais.find(m => m.nome === nomeMaterial);
+
+        // Cria o objeto 'item'
+        const item = {
+            material: {
+                nome: materialOriginal.nome,
+                custoUnitario: materialOriginal.custoUnitario
+            },
             tipo: tipoMaterial,
-            custoUnitario: custoUnitarioMaterial,
-            largura: largura,      // Valor da largura
-            altura: altura,       // Valor da altura
-            comprimento: comprimento, //Comprimento *em cm* (para consistência e edição)
-            quantidade: quantidadeMaterial, // Valor da QUANTIDADE (separado)
-            custoTotal: custoTotalMaterial
+            comprimento,
+            largura,
+            altura,
+            volume,
+            peso,
+            quantidade,
+        };
+
+        // Calcula o custo total do item
+        item.custoTotal = calcularCustoTotalItem(item);
+
+        materiaisProduto.push(item);
+    });
+
+    // Calcula o custo total do produto
+    const custoTotalProduto = materiaisProduto.reduce((total, item) => total + item.custoTotal, 0);
+
+    // Cria ou atualiza o produto
+    if (produtoEmEdicao !== null) {
+        produtos[produtoEmEdicao] = {
+            nome: nomeProduto,
+            materiais: materiaisProduto,
+            custoTotal: custoTotalProduto
+        };
+    } else {
+        produtos.push({
+            nome: nomeProduto,
+            materiais: materiaisProduto,
+            custoTotal: custoTotalProduto
         });
-        custoTotalMateriaisProduto += custoTotalMaterial;
     }
 
-    const produto = {
-        nome: nomeProduto,
-        materiais: materiaisDoProduto,
-        custoMateriais: custoTotalMateriaisProduto
-    };
-    produtos.push(produto);
+    // Limpa o formulário e a tabela
+    document.getElementById('form-produtos-cadastrados').reset();
+    document.querySelector('#tabela-materiais-produto tbody').innerHTML = '';
 
     atualizarTabelaProdutosCadastrados();
-    limparFormulario('form-produtos-cadastrados');
-    tabelaMateriaisProduto.innerHTML = '';
-    alert('Produto cadastrado com sucesso!');
-    salvarDados(); // <-- Salva após cadastrar
-    backupAutomatico(); // <-- ADICIONADO!
+    salvarDados();
+    produtoEmEdicao = null;
+    backupAutomatico(); // Backup automático ao cadastrar produto
 }
-
 function atualizarTabelaProdutosCadastrados() {
-    const tbody = document.querySelector('#tabela-produtos tbody');
-    tbody.innerHTML = '';
+    const tbody = document.querySelector("#tabela-produtos tbody");
+    tbody.innerHTML = ""; // Limpa a tabela
 
     produtos.forEach((produto, index) => {
         const row = tbody.insertRow();
-        const cellNomeProduto = row.insertCell();
-        const cellMateriaisUtilizados = row.insertCell();
-        const cellCustoTotalMateriais = row.insertCell();
-        const cellAcoes = row.insertCell();
 
-        cellNomeProduto.textContent = produto.nome;
+        // Coluna Nome do Produto
+        row.insertCell().textContent = produto.nome;
 
-        let listaMateriaisHTML = '<ul>';
-        produto.materiais.forEach(material => {
-            let dimensoesTexto = '';
-            if (material.tipo === 'Área') {
-                dimensoesTexto = `(${material.largura.toFixed(2)}cm x ${material.altura.toFixed(2)}cm)`;
-            } else if (material.tipo === 'Comprimento') {
-                dimensoesTexto = `(${material.comprimento.toFixed(2)}cm)`;
+        // Coluna Materiais Utilizados (lista formatada)
+        const materiaisCell = row.insertCell();
+        const materiaisList = document.createElement("ul");
+        produto.materiais.forEach(item => {
+            const listItem = document.createElement("li");
+            listItem.textContent = `${item.material.nome} (${item.quantidade} ${item.tipo})`;
+            materiaisList.appendChild(listItem);
+        });
+        materiaisCell.appendChild(materiaisList);
+
+        // *** NOVO CAMPO: Custos/Dimensões do Produto ***
+        const dimensoesCell = row.insertCell();
+        const dimensoesList = document.createElement("ul");
+        produto.materiais.forEach(item => {
+            const listItem = document.createElement("li");
+            let dimensaoTexto = "";
+
+            // Formatação das dimensões/quantidades
+            if (item.tipo === "comprimento") {
+                dimensaoTexto = `${item.comprimento} cm`;
+            } else if (item.tipo === "area") {
+                dimensaoTexto = `${item.largura} x ${item.altura} cm`;
+            } else if (item.tipo === "litro") {
+                dimensaoTexto = `${item.volume} ml`;
+            } else if (item.tipo === "quilo") {
+                dimensaoTexto = `${item.peso} g`;
+            } else if (item.tipo === "unidade") {
+                dimensaoTexto = `${item.quantidade} un`; // Usa a quantidade diretamente
             }
-            listaMateriaisHTML += `<li>${material.nome} ${dimensoesTexto} - ${formatarMoeda(material.custoTotal)} (Qtd: ${material.quantidade.toFixed(2)})</li>`;
+            listItem.textContent = `${item.material.nome}: ${dimensaoTexto}`;
+            dimensoesList.appendChild(listItem);
         });
-        listaMateriaisHTML += '</ul>';
-        cellMateriaisUtilizados.innerHTML = listaMateriaisHTML;
-        cellCustoTotalMateriais.textContent = formatarMoeda(produto.custoMateriais);
+        dimensoesCell.appendChild(dimensoesList);
 
-        const botaoEditarProduto = document.createElement('button');
-        botaoEditarProduto.textContent = 'Editar';
-        botaoEditarProduto.addEventListener('click', function() {
-            editarProduto(index);
-        });
-        cellAcoes.appendChild(botaoEditarProduto);
+        // Coluna Custo Total dos Materiais
+        row.insertCell().textContent = formatarMoeda(produto.custoTotal);
 
-        const botaoRemoverProduto = document.createElement('button');
-        botaoRemoverProduto.textContent = 'Remover';
-        botaoRemoverProduto.addEventListener('click', function() {
-            removerProduto(index);
-        });
-        cellAcoes.appendChild(botaoRemoverProduto);
+        // Coluna Ações (Editar e Remover)
+        const actionsCell = row.insertCell();
+        const editButton = document.createElement("button");
+        editButton.textContent = "Editar";
+        editButton.onclick = () => editarProduto(index);
+        const removeButton = document.createElement("button");
+        removeButton.textContent = "Remover";
+        removeButton.onclick = () => removerProduto(index);
+        actionsCell.appendChild(editButton);
+        actionsCell.appendChild(removeButton);
     });
-     // REMOVIDO: salvarDados();  Não precisa salvar aqui
-    // REMOVIDO: backupAutomatico(); Não precisa de backup aqui
 }
+
 
 function buscarProdutosCadastrados() {
     const termoBusca = document.getElementById('busca-produto').value.toLowerCase();
     const tbody = document.querySelector('#tabela-produtos tbody');
     tbody.innerHTML = '';
 
-    const produtosFiltrados = produtos.filter(produto => produto.nome.toLowerCase().includes(termoBusca));
+    produtos.filter(produto => produto.nome.toLowerCase().includes(termoBusca)).forEach((produto, index) => {
+        const row = tbody.insertRow();
 
-    produtosFiltrados.forEach((produto, index) => {
-		const row = tbody.insertRow();
-        const cellNomeProduto = row.insertCell();
-        const cellMateriaisUtilizados = row.insertCell();
-        const cellCustoTotalMateriais = row.insertCell();
-        const cellAcoes = row.insertCell();
+        // Coluna Nome do Produto
+        row.insertCell().textContent = produto.nome;
 
-        cellNomeProduto.textContent = produto.nome;
+        // Coluna Materiais Utilizados
+        const materiaisCell = row.insertCell();
+        const materiaisList = document.createElement('ul');
+        produto.materiais.forEach(item => {
+            const listItem = document.createElement('li');
+            listItem.textContent = `${item.material.nome} (${item.quantidade} ${item.material.tipo})`;
+            materiaisList.appendChild(listItem);
+        });
+        materiaisCell.appendChild(materiaisList);
 
-        let listaMateriaisHTML = '<ul>';
-        produto.materiais.forEach(material => {
-			//Modificação para exibir largura e altura.
-            let dimensoesTexto = '';
-            if (material.tipo === 'Área') {
-                dimensoesTexto = `(${material.largura.toFixed(2)}cm x ${material.altura.toFixed(2)}cm)`;
-            }else if (material.tipo === 'Comprimento') {
-                dimensoesTexto = `(${material.comprimento.toFixed(2)}cm)`; //Mostra o comprimento
+         // *** NOVO CAMPO: Custos/Dimensões do Produto ***
+        const dimensoesCell = row.insertCell();
+        const dimensoesList = document.createElement("ul");
+        produto.materiais.forEach(item => {
+            const listItem = document.createElement("li");
+            let dimensaoTexto = "";
+
+            // Formatação das dimensões/quantidades
+            if (item.tipo === "comprimento") {
+                dimensaoTexto = `${item.comprimento} cm`;
+            } else if (item.tipo === "area") {
+                dimensaoTexto = `${item.largura} x ${item.altura} cm`;
+            } else if (item.tipo === "litro") {
+                dimensaoTexto = `${item.volume} ml`;
+            } else if (item.tipo === "quilo") {
+                dimensaoTexto = `${item.peso} g`;
+            } else if (item.tipo === "unidade") {
+                dimensaoTexto = `${item.quantidade} un`;  // Usa quantidade para unidades.
             }
-            listaMateriaisHTML += `<li>${material.nome} ${dimensoesTexto} - ${formatarMoeda(material.custoTotal)} (Qtd: ${material.quantidade.toFixed(2)})</li>`;
+            listItem.textContent = `${item.material.nome}: ${dimensaoTexto}`;
+            dimensoesList.appendChild(listItem);
         });
-        listaMateriaisHTML += '</ul>';
-        cellMateriaisUtilizados.innerHTML = listaMateriaisHTML;
-        cellCustoTotalMateriais.textContent = formatarMoeda(produto.custoMateriais);
+        dimensoesCell.appendChild(dimensoesList);
 
-        const botaoEditarProduto = document.createElement('button');
-        botaoEditarProduto.textContent = 'Editar';
-        botaoEditarProduto.addEventListener('click', function() {
-            editarProduto(index);
-        });
-        cellAcoes.appendChild(botaoEditarProduto);
+        // Coluna Custo Total
+        row.insertCell().textContent = formatarMoeda(produto.custoTotal);
 
-        const botaoRemoverProduto = document.createElement('button');
-        botaoRemoverProduto.textContent = 'Remover';
-        botaoRemoverProduto.addEventListener('click', function() {
-            removerProduto(index);
-        });
-        cellAcoes.appendChild(botaoRemoverProduto);
+        // Coluna Ações
+        const actionsCell = row.insertCell();
+        const editButton = document.createElement('button');
+        editButton.textContent = 'Editar';
+        editButton.onclick = () => editarProduto(index);
+        const removeButton = document.createElement('button');
+        removeButton.textContent = 'Remover';
+        removeButton.onclick = () => removerProduto(index);
+        actionsCell.appendChild(editButton);
+        actionsCell.appendChild(removeButton);
     });
 }
 
-function adicionarMaterialNaTabelaProduto(material) {
+
+function adicionarMaterialNaTabelaProduto(material, tipo, quantidade, comprimento, largura, altura, volume, peso) {
     const tbody = document.querySelector('#tabela-materiais-produto tbody');
     const row = tbody.insertRow();
-    const cellNome = row.insertCell();
-    const cellTipo = row.insertCell();
-    const cellCustoUnitario = row.insertCell();
-    const cellDimensoes = row.insertCell();
-    const cellQuantidade = row.insertCell();
-    const cellCustoTotal = row.insertCell();
-    const cellAcoes = row.insertCell();
 
-    cellNome.textContent = material.nome;
-    let unidade = '';
-    switch (material.tipo) {
-        case 'comprimento': unidade = ' (m)'; break;
-        case 'litro': unidade = ' (L)'; break;
-        case 'quilo': unidade = ' (kg)'; break;
-        case 'unidade': unidade = ' (un)'; break;
-        case 'area': unidade = ' (m²)'; break;
+    // Coluna Material/Insumo
+    row.insertCell().textContent = material.nome;
+
+    // Coluna Tipo
+    row.insertCell().textContent = tipo;
+
+    // Coluna Custo Unitário
+    row.insertCell().textContent = formatarMoeda(material.custoUnitario);
+
+    // Coluna Dimensões (inputs, preenchidos com os valores passados)
+    const dimensoesCell = row.insertCell();
+    let dimensoesHTML = "";
+
+    if (tipo === "comprimento") {
+        dimensoesHTML = `<input type="number" class="dimensoes-input" value="${comprimento}"> cm`;
+    } else if (tipo === "area") {
+        dimensoesHTML = `<input type="number" class="dimensoes-input" value="${largura}"> x <input type="number" class="dimensoes-input" value="${altura}"> cm`;
+    } else if (tipo === "litro") {
+        dimensoesHTML = `<input type="number" class="dimensoes-input" value="${volume}"> ml`;
+    } else if (tipo === "quilo") {
+        dimensoesHTML = `<input type="number" class="dimensoes-input" value="${peso}"> g`;
+    } else if (tipo === "unidade") {
+        dimensoesHTML = `<input type="number" class="dimensoes-input" value="${quantidade}"> un`;
     }
-    cellTipo.textContent = material.tipo.charAt(0).toUpperCase() + material.tipo.slice(1) + unidade;
-    cellCustoUnitario.textContent = formatarMoeda(material.custoUnitario);
-
-    // --- Campos de Dimensões (Largura, Altura e Comprimento) ---
-    // MODIFICAÇÃO AQUI: Adiciona a unidade de medida ao placeholder
-    let larguraInput, alturaInput, comprimentoInput;
-
-    if (material.tipo === 'area') {
-        larguraInput = document.createElement('input');
-        larguraInput.type = 'number';
-        larguraInput.placeholder = 'Largura (cm)'; // Adiciona (cm)
-        larguraInput.min = 0.01;
-        larguraInput.step = 0.01;
-        larguraInput.classList.add('dimensoes-input', 'largura');
-        larguraInput.value = material.largura || '';
-
-        alturaInput = document.createElement('input');
-        alturaInput.type = 'number';
-        alturaInput.placeholder = 'Altura (cm)'; // Adiciona (cm)
-        alturaInput.min = 0.01;
-        alturaInput.step = 0.01;
-        alturaInput.classList.add('dimensoes-input', 'altura');
-        alturaInput.value = material.altura || '';
-
-        cellDimensoes.appendChild(larguraInput);
-        cellDimensoes.appendChild(alturaInput);
-
-    } else if (material.tipo === 'comprimento') {
-        comprimentoInput = document.createElement('input');
-        comprimentoInput.type = 'number';
-        comprimentoInput.placeholder = 'Comprimento (cm)'; // Adiciona (cm)
-        comprimentoInput.min = 0.01;
-        comprimentoInput.step = 0.01;
-        comprimentoInput.classList.add('dimensoes-input', 'comprimento');
-        comprimentoInput.value = material.comprimento || '';
-        cellDimensoes.appendChild(comprimentoInput);
-    }
-    // --- Campo de Quantidade (AGORA SEPARADO) ---
-    const inputQuantidade = document.createElement('input');
-    inputQuantidade.type = 'number';
-    inputQuantidade.value = material.quantidade || 1;
-    inputQuantidade.min = 0.01;
-    inputQuantidade.step = 0.01;
-    inputQuantidade.classList.add('quantidade-input');
-    inputQuantidade.readOnly = material.tipo === 'area';
+    dimensoesCell.innerHTML = dimensoesHTML;
 
 
-    const unidadeMedidaSpan = document.createElement('span');
-    unidadeMedidaSpan.classList.add('unidade-medida');
-    // --- Lógica para Área (agora calcula e exibe a área corretamente) ---
-    if (material.tipo === 'area') {
-        const areaSpan = document.createElement('span');
-        areaSpan.classList.add('dimensoes-span');
-        cellDimensoes.appendChild(areaSpan);
-        unidadeMedidaSpan.textContent = '';
+    // Coluna Quantidade (Calculada, readonly)
+    const quantidadeCell = row.insertCell();
+    const quantidadeInput = document.createElement("input");
+    quantidadeInput.type = "number";
+    quantidadeInput.classList.add("quantidade-input"); // Adiciona a classe
+    quantidadeInput.value = quantidade;
+    quantidadeInput.readOnly = true;
+    quantidadeCell.appendChild(quantidadeInput);
 
-        // Função para calcular a área e atualizar o custo total
-        function calcularAreaEAtualizar() {
-            const largura = parseFloat(larguraInput.value) || 0;
-            const altura = parseFloat(alturaInput.value) || 0;
-
-            if (isNaN(largura) || largura <= 0 || isNaN(altura) || altura <= 0) {
-                areaSpan.textContent = '0.00 m²';
-                inputQuantidade.value = 0;
-                calcularCustoTotalMaterial();
-                return;
-            }
-
-            const area = (largura * altura) / 10000;
-            areaSpan.textContent = area.toFixed(2) + ' m²';
-            inputQuantidade.value = area.toFixed(2);
-            calcularCustoTotalMaterial();
-        }
-
-        larguraInput.addEventListener('input', calcularAreaEAtualizar);
-        alturaInput.addEventListener('input', calcularAreaEAtualizar);
-
-        calcularAreaEAtualizar();
-
-    } else if(material.tipo === 'comprimento'){
-        const comprimentoSpan = document.createElement('span');
-        comprimentoSpan.classList.add('dimensoes-span');
-        cellDimensoes.appendChild(comprimentoSpan);
-        unidadeMedidaSpan.textContent = '';
-
-        function calcularComprimentoEAtualizar(){
-            const comprimento = parseFloat(comprimentoInput.value) || 0;
-
-            if(isNaN(comprimento) || comprimento <= 0){
-                comprimentoSpan.textContent = '0.00 cm';
-                inputQuantidade.value = 0;
-                calcularCustoTotalMaterial();
-                return;
-            }
-
-            comprimentoSpan.textContent = comprimento.toFixed(2) + ' cm';
-            inputQuantidade.value = comprimento.toFixed(2);
-            calcularCustoTotalMaterial();
-        }
-        comprimentoInput.addEventListener('input', calcularComprimentoEAtualizar);
-        calcularComprimentoEAtualizar();
-
-    }else {
-        unidadeMedidaSpan.textContent = unidade;
-        inputQuantidade.addEventListener('input', calcularCustoTotalMaterial);
+    // --- Cria o objeto item para usar na função de cálculo ---
+    const item = {
+      material: {
+          nome: material.nome,
+          custoUnitario: material.custoUnitario
+      },
+      tipo: tipo,
+      comprimento,
+      largura,
+      altura,
+      volume,
+      peso,
+      quantidade
     }
 
-    cellQuantidade.appendChild(inputQuantidade);
-    cellQuantidade.appendChild(unidadeMedidaSpan);
+    // Coluna Custo Total (Calculado)
+    const custoTotal = calcularCustoTotalItem(item); // Chamada da função
+    row.insertCell().textContent = formatarMoeda(custoTotal);
 
+    // Coluna Ações (Remover)
+    const actionsCell = row.insertCell();
+    const removeButton = document.createElement("button");
+    removeButton.textContent = "Remover";
+    removeButton.onclick = () => removerLinhaMaterial(tbody.rows.length -1); // Passa o índice correto.
+    actionsCell.appendChild(removeButton);
 
-    // --- Função para calcular o custo total ---
-    function calcularCustoTotalMaterial() {
-        let quantidade = parseFloat(inputQuantidade.value);
-         if (isNaN(quantidade) || quantidade <= 0) {
-            if(material.tipo !== 'area' && material.tipo !== 'comprimento'){
-                quantidade = 0.01;
-                inputQuantidade.value = quantidade;
-            } else{
-                quantidade = 0;
-            }
-        }
-
-        let custoTotal = 0;
-        if(material.tipo === "area"){
-            const largura = parseFloat(larguraInput.value) || 0;
-            const altura = parseFloat(alturaInput.value) || 0;
-            const area = (largura * altura) / 10000;
-            custoTotal = material.custoUnitario * area;
-
-        } else if(material.tipo === "comprimento") {
-            const comprimento = parseFloat(comprimentoInput.value) || 0;
-            const comprimentoEmMetros = comprimento / 100;
-            custoTotal = material.custoUnitario * comprimentoEmMetros;
-
-        } else {
-          custoTotal = material.custoUnitario * quantidade;
-        }
-
-        cellCustoTotal.textContent = formatarMoeda(custoTotal);
-    }
-
-    calcularCustoTotalMaterial();
-
-
-    const botaoRemoverMaterial = document.createElement('button');
-    botaoRemoverMaterial.textContent = 'Remover';
-    botaoRemoverMaterial.addEventListener('click', function() {
-        removerLinhaMaterial(row);
-    });
-    cellAcoes.appendChild(botaoRemoverMaterial);
+     // Limpa o campo de pesquisa
+     document.getElementById('pesquisa-material').value = '';
+     document.getElementById('resultados-pesquisa').innerHTML = '';
+     document.getElementById('resultados-pesquisa').style.display = 'none';
 }
+
+
+
+// Função de pesquisa (para o autocomplete)
+document.getElementById('pesquisa-material').addEventListener('input', function() {
+    const termo = this.value.toLowerCase();
+    const resultadosDiv = document.getElementById('resultados-pesquisa');
+    resultadosDiv.innerHTML = '';
+
+    if (termo.length === 0) {
+        resultadosDiv.style.display = 'none';
+        return;
+    }
+
+    const resultados = materiais.filter(material => material.nome.toLowerCase().includes(termo));
+
+    if (resultados.length > 0) {
+        resultadosDiv.style.display = 'block';
+        resultados.forEach(material => {
+            const div = document.createElement('div');
+            div.textContent = material.nome;
+            div.onclick = () => {
+                // Ao clicar, adiciona o material na tabela
+                const tipo = material.tipo;
+                let quantidade, comprimento, largura, altura, volume, peso;
+
+                if (tipo === "comprimento") {
+                    comprimento = parseFloat(prompt("Informe o comprimento em cm:", material.comprimentoCm));
+                    if(isNaN(comprimento)) return;
+                    quantidade = comprimento / material.comprimentoCm;
+
+                } else if (tipo === "area") {
+                    largura = parseFloat(prompt("Informe a largura em cm:", material.larguraCm));
+                    if(isNaN(largura)) return;
+                    altura = parseFloat(prompt("Informe a altura em cm:", material.alturaCm));
+                    if(isNaN(altura)) return;
+                    quantidade = (largura * altura) / (material.larguraCm * material.alturaCm);
+
+                } else if (tipo === "litro") {
+                    volume = parseFloat(prompt("Informe o volume em ml:", material.volumeMl));
+                    if(isNaN(volume)) return;
+                     quantidade = volume / material.volumeMl;
+
+                } else if (tipo === "quilo") {
+                   peso = parseFloat(prompt("Informe o peso em g:", material.pesoG));
+                   if(isNaN(peso)) return;
+                   quantidade = peso / material.pesoG;
+
+                } else if (tipo === "unidade") {
+                  quantidade = parseInt(prompt("Informe a quantidade:", 1)); //Padrão 1 para unidade.
+                  if(isNaN(quantidade)) return;
+                }
+                adicionarMaterialNaTabelaProduto(material, tipo, quantidade, comprimento, largura, altura, volume, peso);
+            };
+            resultadosDiv.appendChild(div);
+        });
+    } else {
+        resultadosDiv.style.display = 'none';
+    }
+});
 
 function editarProduto(index) {
     const produto = produtos[index];
-    if (!produto) return;
 
-    document.getElementById('nome-produto').value = produto.nome;
+    // Limpa a tabela de materiais do produto
+    const tbody = document.querySelector("#tabela-materiais-produto tbody");
+    tbody.innerHTML = "";
 
-    const tabelaMateriaisProdutoBody = document.querySelector('#tabela-materiais-produto tbody');
-    tabelaMateriaisProdutoBody.innerHTML = '';
+    // Preenche os campos do formulário com os dados do produto
+    document.getElementById("nome-produto").value = produto.nome;
 
-    produto.materiais.forEach(material => {
-        adicionarMaterialNaTabelaProduto(material);
+    // Preenche a tabela de materiais com os dados do produto
+    produto.materiais.forEach((item, itemIndex) => {
+        const row = tbody.insertRow();
+
+        // Coluna Material/Insumo
+        row.insertCell().textContent = item.material.nome;
+
+        // Coluna Tipo
+        row.insertCell().textContent = item.tipo;
+
+        // Coluna Custo Unitário
+        row.insertCell().textContent = formatarMoeda(item.material.custoUnitario);
+
+        // Coluna Dimensões (inputs)
+        const dimensoesCell = row.insertCell();
+        let dimensoesHTML = "";
+
+        // --- Criação dos inputs e adição dos event listeners ---
+        if (item.tipo === "comprimento") {
+            dimensoesHTML = `<input type="number" class="dimensoes-input" value="${item.comprimento}"> cm`;
+        } else if (item.tipo === "area") {
+            dimensoesHTML = `<input type="number" class="dimensoes-input" value="${item.largura}"> x <input type="number" class="dimensoes-input" value="${item.altura}"> cm`;
+        } else if (item.tipo === "litro") {
+            dimensoesHTML = `<input type="number" class="dimensoes-input" value="${item.volume}"> ml`;
+        } else if (item.tipo === "quilo") {
+            dimensoesHTML = `<input type="number" class="dimensoes-input" value="${item.peso}"> g`;
+        } else if (item.tipo === "unidade") {
+            dimensoesHTML = `<input type="number" class="dimensoes-input" value="${item.quantidade}"> un`;
+        }
+        dimensoesCell.innerHTML = dimensoesHTML;
+
+
+        // Coluna Quantidade (Calculada)
+        const quantidadeCell = row.insertCell();
+        const quantidadeInput = document.createElement("input");
+        quantidadeInput.type = "number";
+        quantidadeInput.classList.add("quantidade-input");
+        quantidadeInput.value = item.quantidade;
+        quantidadeInput.readOnly = true;
+        quantidadeCell.appendChild(quantidadeInput);
+
+        // Coluna Custo Total
+        const custoTotalCell = row.insertCell();
+        custoTotalCell.textContent = formatarMoeda(item.custoTotal); // Valor inicial
+
+
+        // --- Adiciona event listeners para recalcular quando as dimensões mudarem ---
+        const inputsDimensao = dimensoesCell.querySelectorAll('.dimensoes-input');
+        inputsDimensao.forEach(input => {
+            input.addEventListener('input', () => {
+                // Encontra o material original (necessário para obter as dimensões base)
+                const materialOriginal = materiais.find(m => m.nome === item.material.nome && m.tipo === item.tipo); //Importante comparar nome *E* tipo.
+
+                // Atualiza os valores no objeto 'item'
+                if (item.tipo === "comprimento") {
+                    item.comprimento = parseFloat(inputsDimensao[0].value) || 0; //Evita NaN
+                    item.quantidade = item.comprimento / materialOriginal.comprimentoCm;
+                } else if (item.tipo === "area") {
+                    item.largura = parseFloat(inputsDimensao[0].value) || 0;
+                    item.altura = parseFloat(inputsDimensao[1].value) || 0;
+                    item.quantidade = (item.largura * item.altura) / (materialOriginal.larguraCm * materialOriginal.alturaCm);
+                } else if (item.tipo === "litro") {
+                    item.volume = parseFloat(inputsDimensao[0].value) || 0;
+                    item.quantidade = item.volume / materialOriginal.volumeMl;
+                } else if (item.tipo === "quilo") {
+                    item.peso = parseFloat(inputsDimensao[0].value) || 0;
+                    item.quantidade = item.peso / materialOriginal.pesoG;
+                } else if (item.tipo === "unidade") {
+                    item.quantidade = parseFloat(inputsDimensao[0].value) || 0;
+                }
+
+                // Recalcula o custo total do *item*
+                item.custoTotal = calcularCustoTotalItem(item);
+
+                // Atualiza a exibição do custo total na tabela
+                custoTotalCell.textContent = formatarMoeda(item.custoTotal);
+                quantidadeInput.value = item.quantidade;
+
+                // Recalcula o custo total do *produto* (soma de todos os itens)
+                produto.custoTotal = produto.materiais.reduce((total, i) => total + i.custoTotal, 0);
+
+                // Atualiza a tabela de produtos cadastrados e a seção de cálculo
+                atualizarTabelaProdutosCadastrados();
+                if (document.getElementById('produto-pesquisa').value === produto.nome) {
+                    carregarDadosProduto(produto); //Recarrega se for o produto exibido
+                    calcularCustos();
+                }
+            });
+        });
+        // --- Fim da adição dos event listeners ---
+
+
+        // Coluna Ações (Remover)
+        const actionsCell = row.insertCell();
+        const removeButton = document.createElement("button");
+        removeButton.textContent = "Remover";
+        removeButton.onclick = () => removerLinhaMaterial(itemIndex);
+        actionsCell.appendChild(removeButton);
     });
 
-     //  REMOVE o produto da lista *ANTES* de salvar a edição.
-    produtos.splice(index, 1);
-    atualizarTabelaProdutosCadastrados();
-    document.getElementById('produtos-cadastrados').scrollIntoView({ behavior: 'smooth' });
-    document.querySelector('#produtos-cadastrados h2').textContent = 'Editar Produto';
-     //  NÃO chama backupAutomatico() aqui!  O backup será feito quando o usuário clicar em "Cadastrar" (que, no modo de edição, funciona como "Salvar").
+    // Armazena o índice do produto sendo editado
+    produtoEmEdicao = index;
+
+    // Rola a página para o topo (opcional, para melhor usabilidade)
+    window.scrollTo(0, 0);
 }
 
 function removerProduto(index) {
     produtos.splice(index, 1);
     atualizarTabelaProdutosCadastrados();
-    salvarDados(); // <-- Salva após remover
-    backupAutomatico(); // <-- ADICIONADO!
+    salvarDados(); // Salva após remover
 }
 
-// --- Pesquisa e Adição de Materiais na Seção Produtos ---
-document.getElementById('pesquisa-material').addEventListener('input', function() {
-    const termoPesquisa = this.value.toLowerCase();
-    const resultadosPesquisaDiv = document.getElementById('resultados-pesquisa');
-    resultadosPesquisaDiv.innerHTML = '';
-
-    if (termoPesquisa.length < 2) {
-        resultadosPesquisaDiv.style.display = 'none';
-        return;
-    }
-
-    const materiaisFiltrados = materiais.filter(material => material.nome.toLowerCase().includes(termoPesquisa));
-
-    if (materiaisFiltrados.length > 0) {
-        resultadosPesquisaDiv.style.display = 'block';
-        materiaisFiltrados.forEach(material => {
-            const resultadoDiv = document.createElement('div');
-            resultadoDiv.textContent = material.nome + ' (' + material.tipo + ') - Custo Unitário: ' + formatarMoeda(material.custoUnitario);
-            resultadoDiv.addEventListener('click', function() {
-                adicionarMaterialNaTabelaProduto(material);
-                document.getElementById('pesquisa-material').value = '';
-                resultadosPesquisaDiv.innerHTML = '';
-                resultadosPesquisaDiv.style.display = 'none';
-            });
-            resultadosPesquisaDiv.appendChild(resultadoDiv);
-        });
-    } else {
-        resultadosPesquisaDiv.style.display = 'none';
-    }
-});
-
-function removerLinhaMaterial(row) {
-    row.remove();
+function removerLinhaMaterial(index) {
+    const tbody = document.querySelector('#tabela-materiais-produto tbody');
+    tbody.deleteRow(index);
 }
+
 /* ==== FIM SEÇÃO - PRODUTOS CADASTRADOS ==== */
-/* ==== INÍCIO SEÇÃO - CÁLCULO DA PRECIFICAÇÃO ==== */
-// --- Cálculo da Precificação (Refatorado) ---
 
+/* ==== INÍCIO SEÇÃO - CÁLCULO DA PRECIFICAÇÃO ==== */
 function buscarProdutosAutocomplete() {
     const termo = document.getElementById('produto-pesquisa').value.toLowerCase();
     const resultadosDiv = document.getElementById('produto-resultados');
-    resultadosDiv.innerHTML = ''; // Limpa resultados anteriores
-    resultadosDiv.classList.remove('hidden'); //Mostra a div
+    resultadosDiv.innerHTML = '';
 
-    if (termo.length < 2) {
-        resultadosDiv.classList.add('hidden'); //Esconde se termo muito curto.
-        return; // Sai se o termo for muito curto
+    if (!termo) {
+        resultadosDiv.classList.add('hidden');
+        return;
     }
 
-    const produtosFiltrados = produtos.filter(produto => produto.nome.toLowerCase().includes(termo));
+    const resultados = produtos.filter(produto => produto.nome.toLowerCase().includes(termo));
 
-    if (produtosFiltrados.length > 0) {
-        produtosFiltrados.forEach(produto => {
+    if (resultados.length > 0) {
+        resultadosDiv.classList.remove('hidden');
+        resultados.forEach(produto => {
             const div = document.createElement('div');
             div.textContent = produto.nome;
-            div.addEventListener('click', function() {
-                selecionarProduto(produto.nome); // Função para selecionar
-                resultadosDiv.classList.add('hidden'); // Esconde após seleção
-            });
+            div.onclick = () => selecionarProduto(produto);
             resultadosDiv.appendChild(div);
         });
     } else {
-       resultadosDiv.classList.add('hidden'); //Esconde caso não encontre.
+        resultadosDiv.classList.add('hidden');
     }
 }
 
-function selecionarProduto(nomeProduto) {
-    document.getElementById('produto-pesquisa').value = nomeProduto; // Preenche o campo
-    carregarDadosProduto(nomeProduto); // Carrega os dados (custo)
+function selecionarProduto(produto) {
+    document.getElementById('produto-pesquisa').value = produto.nome; // Preenche o input
+    document.getElementById('produto-resultados').classList.add('hidden'); // Esconde a lista
+    carregarDadosProduto(produto);
+    calcularCustos(); // Calcula os custos assim que um produto é selecionado
 }
 
-function carregarDadosProduto(nomeProduto) {
-    const produto = produtos.find(p => p.nome === nomeProduto);
 
-    if (produto) {
-        document.getElementById('custo-produto').textContent = formatarMoeda(produto.custoMateriais);
-        // Exibe os detalhes do produto (materiais)
-        const detalhesProdutoDiv = document.getElementById('detalhes-produto');
-        const listaMateriais = document.getElementById('lista-materiais-produto');
-        listaMateriais.innerHTML = ''; // Limpa a lista
+function carregarDadosProduto(produto) {
 
-        produto.materiais.forEach(material => {
-            //Modificação para exibir largura e altura
-			let dimensoesTexto = '';
-            if (material.tipo === 'Área') {
-                dimensoesTexto = `(${material.largura.toFixed(2)}cm x ${material.altura.toFixed(2)}cm)`;
-            }else if (material.tipo === 'Comprimento') {
-                dimensoesTexto = `(${material.comprimento.toFixed(2)}cm)`; //Mostra o comprimento
-            }
-            const li = document.createElement('li');
-            li.textContent = `${material.nome} ${dimensoesTexto} (${material.tipo}) - Qtd: ${material.quantidade.toFixed(2)} - Custo: ${formatarMoeda(material.custoTotal)}`;  //Quantidade com 2 casas
-            listaMateriais.appendChild(li);
-        });
-        detalhesProdutoDiv.style.display = 'block'; // Mostra a div
+    //Custo do produto
+    document.getElementById('custo-produto').textContent = formatarMoeda(produto.custoTotal);
 
-        calcularCustos(); // Recalcula *tudo*
-    } else {
-        document.getElementById('custo-produto').textContent = 'R$ 0,00';
-         document.getElementById('detalhes-produto').style.display = 'none'; // Esconde se não tiver produto
-    }
+    // Limpa detalhes anteriores
+    const listaMateriais = document.getElementById('lista-materiais-produto');
+    listaMateriais.innerHTML = '';
+
+    // Preenche a lista de materiais (detalhes)
+    produto.materiais.forEach(item => {
+        const li = document.createElement('li');
+        li.textContent = `${item.material.nome} - ${item.quantidade} ${item.tipo} - ${formatarMoeda(item.custoTotal)}`;
+        listaMateriais.appendChild(li);
+    });
+
+     // Mostra a seção de detalhes
+     document.getElementById('detalhes-produto').style.display = 'block';
+
 }
 
 function calcularCustos() {
-    const horasProduto = parseFloat(document.getElementById('horas-produto').value) || 0;
+    const produtoSelecionadoNome = document.getElementById('produto-pesquisa').value;
+    const produtoSelecionado = produtos.find(p => p.nome === produtoSelecionadoNome);
 
-    // 1. Custo de Mão de Obra (DETALHADO)
+    // Custos do Produto
+    const custoProduto = produtoSelecionado ? produtoSelecionado.custoTotal : 0;
+    document.getElementById('custo-produto').textContent = formatarMoeda(custoProduto);
+
+    // Custos da Mão de Obra
+    const horasProduto = parseFloat(document.getElementById('horas-produto').value) || 0; //Evita NaN
     const custoMaoDeObra = maoDeObra.valorHora * horasProduto;
     const custoFerias13o = maoDeObra.custoFerias13o * horasProduto;
     const totalMaoDeObra = custoMaoDeObra + custoFerias13o;
@@ -1290,223 +1238,187 @@ function calcularCustos() {
     document.getElementById('custo-ferias-13o-detalhe').textContent = formatarMoeda(custoFerias13o);
     document.getElementById('total-mao-de-obra').textContent = formatarMoeda(totalMaoDeObra);
 
+    // Custos Indiretos
+    const todosCustosIndiretos = [...custosIndiretosPredefinidos, ...custosIndiretosAdicionais];
+    const custosIndiretosAtivos = todosCustosIndiretos.filter(custo => custo.valorMensal > 0); // MODIFICADO: FILTRA CUSTOS ATIVOS
+    const custoIndiretoTotalPorHora = custosIndiretosAtivos.reduce((total, custo) => total + (custo.valorMensal / maoDeObra.horas), 0);
+    const custoIndiretoTotal = custoIndiretoTotalPorHora * horasProduto;
+    document.getElementById('custo-indireto').textContent = formatarMoeda(custoIndiretoTotal);
 
-    // 2. Custo do Produto (já é carregado em carregarDadosProduto)
-
-    // 3. Custos Indiretos (DETALHADO, por item, e SÓ SE > 0)
-    let custoIndiretoTotalProduto = 0;
-    const listaCustosIndiretosDetalhes = document.getElementById('lista-custos-indiretos-detalhes');
-    listaCustosIndiretosDetalhes.innerHTML = ''; // Limpa a lista
-
-    custosIndiretosPredefinidos.forEach(custo => {
+    // Lista de Custos Indiretos Detalhados
+    const listaCustosIndiretos = document.getElementById('lista-custos-indiretos-detalhes');
+    listaCustosIndiretos.innerHTML = ''; // Limpa a lista
+    custosIndiretosAtivos.forEach(custo => { // MODIFICADO: USA custosIndiretosAtivos
+        const li = document.createElement('li');
         const custoPorHora = custo.valorMensal / maoDeObra.horas;
-        const custoItemProduto = custoPorHora * horasProduto;
-
-        // AQUI: Só adiciona à lista se o custo for > 0
-        if (custoItemProduto > 0) {
-            custoIndiretoTotalProduto += custoItemProduto;
-            const li = document.createElement('li');
-            li.textContent = `${custo.descricao}: ${formatarMoeda(custoItemProduto)}`;
-            listaCustosIndiretosDetalhes.appendChild(li);
-        }
+        const custoTotalItem = custoPorHora * horasProduto;
+        li.textContent = `${custo.descricao} - ${formatarMoeda(custoTotalItem)}`;
+        listaCustosIndiretos.appendChild(li);
     });
 
-    custosIndiretosAdicionais.forEach(custo => {
-        const custoPorHora = custo.valorMensal / maoDeObra.horas;
-        const custoItemProduto = custoPorHora * horasProduto;
+      // Mostra a seção de detalhes dos custos indiretos
+      document.getElementById('detalhes-custos-indiretos').style.display = 'block';
 
-        // AQUI: Só adiciona à lista se o custo for > 0
-        if (custoItemProduto > 0) {
-            custoIndiretoTotalProduto += custoItemProduto;
-            const li = document.createElement('li');
-            li.textContent = `${custo.descricao}: ${formatarMoeda(custoItemProduto)}`;
-            listaCustosIndiretosDetalhes.appendChild(li);
-        }
-    });
 
-     document.getElementById('custo-indireto').textContent = formatarMoeda(custoIndiretoTotalProduto); // Total (por hora)
-
-    // 4. Subtotal
-    const nomeProduto = document.getElementById('produto-pesquisa').value;
-    const produto = produtos.find(p => p.nome === nomeProduto);
-    const custoProduto = produto ? produto.custoMateriais : 0;
-    const subtotal = custoProduto + totalMaoDeObra + custoIndiretoTotalProduto;
+    // Subtotal
+    const subtotal = custoProduto + totalMaoDeObra + custoIndiretoTotal;
     document.getElementById('subtotal').textContent = formatarMoeda(subtotal);
 
-    calcularPrecoVendaFinal(); //Chama para já calcular com os novos valores.
+    // Calcula o preço de venda final (já que o subtotal mudou)
+    calcularPrecoVendaFinal();
 }
 
-function calcularPrecoVendaFinal(){
-    const margemLucro = parseFloat(document.getElementById('margem-lucro-final').value) / 100 || 0;
-    const subtotalTexto = document.getElementById('subtotal').textContent;
+function calcularPrecoVendaFinal() {
+    const subtotal = parseFloat(document.getElementById('subtotal').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) || 0;
+    const margemLucroFinal = parseFloat(document.getElementById('margem-lucro-final').value) || 0;
 
-    // Converte o subtotal para um número, tratando a formatação de moeda
-    const subtotalNumerico = parseFloat(subtotalTexto.replace(/[^\d,-]/g, '').replace('.', '').replace(',', '.')) || 0;
-    const precoVenda = subtotalNumerico * (1 + margemLucro);
-     const margemLucroValor = precoVenda - subtotalNumerico; //Calcula a margem
-    document.getElementById('margem-lucro-valor').textContent = formatarMoeda(margemLucroValor);
-    document.getElementById('total-final').textContent = formatarMoeda(precoVenda);
+    const margemLucroValor = subtotal * (margemLucroFinal / 100);
+    const totalFinal = subtotal + margemLucroValor;
 
-    calcularTotalComTaxas(); //Chama a função para o cálculo final.
+    document.getElementById('margem-lucro-valor').textContent = formatarMoeda(margemLucroValor); //Mostra o valor
+    document.getElementById('total-final').textContent = formatarMoeda(totalFinal);
+
+    calcularTotalComTaxas(); // Calcula o total com taxas, já que o total mudou.
 }
 
-// --- Função para Taxa de Crédito ---
 function salvarTaxaCredito() {
-    const incluir = document.getElementById('incluir-taxa-credito-sim').checked;
-    const percentual = parseFloat(document.getElementById('taxa-credito-percentual').value);
+    taxaCredito.percentual = parseFloat(document.getElementById('taxa-credito-percentual').value);
+    taxaCredito.incluir = document.getElementById('incluir-taxa-credito-sim').checked;
 
-    if (incluir && (isNaN(percentual) || percentual < 0)) {
-        alert("Por favor, insira um valor percentual válido para a taxa.");
-        return;
-    }
+     // Dispara o cálculo para atualizar, se necessário.
+     calcularTotalComTaxas();
 
-    taxaCredito.incluir = incluir;
-    taxaCredito.percentual = incluir ? percentual : 0; //Salva 0 se não incluir.
-    calcularTotalComTaxas(); //Recalcula o total com a nova taxa.
-    salvarDados(); // <-- Salva após alterar taxa
-    }
-
-function calcularTotalComTaxas() {
-    const precoVendaTexto = document.getElementById('total-final').textContent; //Pega do total com margem.
-    const precoVendaNumerico = parseFloat(precoVendaTexto.replace(/[^\d,-]/g, '').replace('.', '').replace(',', '.')) || 0;
-
-    let taxaCreditoValor = 0;
-    if (taxaCredito.incluir) {
-        taxaCreditoValor = precoVendaNumerico * (taxaCredito.percentual / 100);
-    }
-    document.getElementById('taxa-credito-valor').textContent = formatarMoeda(taxaCreditoValor);
-
-    const totalFinalComTaxas = precoVendaNumerico + taxaCreditoValor;
-    document.getElementById('total-final-com-taxas').textContent = formatarMoeda(totalFinalComTaxas);
-
-    // --- ATUALIZAÇÃO DA MENSAGEM DO TOTAL FINAL ---
-    const mensagemTotalFinal = document.querySelector('.total:last-of-type span:first-child'); // Seleciona a label
-     if (taxaCredito.incluir) {
-        mensagemTotalFinal.textContent = "Total Final (com Taxas do cartão de crédito):";
-    } else {
-        mensagemTotalFinal.textContent = "Total Final (sem Taxas do cartão de crédito):";
-    }
+    salvarDados();
 }
+
+function calcularTotalComTaxas(){
+
+  const total = parseFloat(document.getElementById('total-final').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) || 0;
+
+  if(document.getElementById('incluir-taxa-credito-sim').checked){
+    const taxa = total * (taxaCredito.percentual/100);
+    const totalComTaxas = total + taxa;
+    document.getElementById('taxa-credito-valor').textContent = formatarMoeda(taxa);
+    document.getElementById('total-final-com-taxas').textContent = formatarMoeda(totalComTaxas);
+  } else{
+    document.getElementById('taxa-credito-valor').textContent = formatarMoeda(0);
+    document.getElementById('total-final-com-taxas').textContent = formatarMoeda(total); //Mantém o total
+  }
+}
+
+//Event listeners
+document.getElementById('horas-produto').addEventListener('input', calcularCustos);
+document.getElementById('margem-lucro-final').addEventListener('input', calcularPrecoVendaFinal);
+document.querySelectorAll('input[name="incluir-taxa-credito"]').forEach(radio => {
+    radio.addEventListener('change', calcularTotalComTaxas);
+});
+document.getElementById('taxa-credito-percentual').addEventListener('input', calcularTotalComTaxas);
+
 /* ==== FIM SEÇÃO - CÁLCULO DA PRECIFICAÇÃO ==== */
 
 /* ==== INÍCIO SEÇÃO - PRECIFICAÇÕES GERADAS ==== */
 function gerarNotaPrecificacao() {
-    console.log("Função gerarNotaPrecificacao() foi chamada!");
-
-    const nomeCliente = document.getElementById('nome-cliente').value.trim();
+    const nomeCliente = document.getElementById('nome-cliente').value || "Não informado";
     const produtoNome = document.getElementById('produto-pesquisa').value;
-    const horasProduto = document.getElementById('horas-produto').value;
-    const custoProduto = document.getElementById('custo-produto').textContent;
-    const totalMaoDeObra = document.getElementById('total-mao-de-obra').textContent;
-    const custoIndireto = document.getElementById('custo-indireto').textContent;
-    const subtotal = document.getElementById('subtotal').textContent;
-    const margemLucroValor = document.getElementById('margem-lucro-valor').textContent;
-    const margemLucroPercentual = document.getElementById('margem-lucro-final').value;
-    const totalFinal = document.getElementById('total-final').textContent;
-    const taxaCreditoValor = document.getElementById('taxa-credito-valor').textContent;
-    const taxaCreditoPercentual = document.getElementById('taxa-credito-percentual').value;
-    const totalFinalComTaxas = document.getElementById('total-final-com-taxas').textContent;
+    const horasProduto = parseFloat(document.getElementById('horas-produto').value);
+    const margemLucro = parseFloat(document.getElementById('margem-lucro-final').value);
+    const totalFinal = parseFloat(document.getElementById('total-final').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.'));
+    const totalComTaxas = parseFloat(document.getElementById('total-final-com-taxas').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.'));
+
+    // *** INÍCIO - Coletando dados detalhados para a nota ***
+    const produtoSelecionadoNome = document.getElementById('produto-pesquisa').value;
+    const produtoSelecionado = produtos.find(p => p.nome === produtoSelecionadoNome);
+    const custoProduto = produtoSelecionado ? produtoSelecionado.custoTotal : 0;
+
+    const custoMaoDeObraDetalhe = parseFloat(document.getElementById('custo-mao-de-obra-detalhe').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) || 0;
+    const custoFerias13oDetalhe = parseFloat(document.getElementById('custo-ferias-13o-detalhe').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) || 0;
+    const totalMaoDeObra = parseFloat(document.getElementById('total-mao-de-obra').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) || 0;
+
+    const custoIndiretoTotal = parseFloat(document.getElementById('custo-indireto').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) || 0;
+    const listaCustosIndiretosDetalhes = [];
+    const listaCustosIndiretosElementos = document.querySelectorAll('#lista-custos-indiretos-detalhes li');
+    listaCustosIndiretosElementos.forEach(itemLi => {
+        listaCustosIndiretosDetalhes.push(itemLi.textContent); // Salva a string completa do item
+    });
+
+    const subtotal = parseFloat(document.getElementById('subtotal').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) || 0;
+    const margemLucroValor = parseFloat(document.getElementById('margem-lucro-valor').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) || 0;
+    const taxaCreditoValor = parseFloat(document.getElementById('taxa-credito-valor').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) || 0;
+
+    const detalhesMateriaisProduto = [];
+    if (produtoSelecionado) {
+        produtoSelecionado.materiais.forEach(item => {
+            detalhesMateriaisProduto.push(`${item.material.nome} - ${item.quantidade} ${item.tipo} - ${formatarMoeda(item.custoTotal)}`);
+        });
+    }
+    // *** FIM - Coletando dados detalhados para a nota ***
+
+
+    // Verifica se todos os dados necessários estão presentes
+   if (!produtoNome || isNaN(horasProduto) || isNaN(margemLucro) || isNaN(totalFinal)) {
+        alert("Por favor, preencha todos os campos necessários para gerar a nota de precificação.");
+        return;
+    }
 
     const agora = new Date();
     const ano = agora.getFullYear();
-    const numeroNota = proximoNumeroPrecificacao++;
-    const numeroAno = `${numeroNota}/${ano}`;
+    const numeroPrecificacao = proximoNumeroPrecificacao++;
 
-    const nota = {
-        numeroAno: numeroAno,
-        nomeCliente: nomeCliente,
-        produtoNome: produtoNome,
-        horasProduto: horasProduto,
-        custoProduto: custoProduto,
+    const precificacao = {
+        numero: numeroPrecificacao,
+        ano: ano,
+        cliente: nomeCliente,
+        produto: produtoNome,
+        horas: horasProduto,
+        margem: margemLucro,
+        total: totalFinal,
+        totalComTaxas: totalComTaxas,
+
+        // *** INÍCIO - Salvando dados detalhados na nota ***
+        custoMateriais: custoProduto,
+        detalhesMateriais: detalhesMateriaisProduto,
+        custoMaoDeObraBase: custoMaoDeObraDetalhe,
+        custoFerias13o: custoFerias13oDetalhe,
         totalMaoDeObra: totalMaoDeObra,
-        custoIndireto: custoIndireto,
+        custoIndiretoTotal: custoIndiretoTotal,
+        detalhesCustosIndiretos: listaCustosIndiretosDetalhes,
         subtotal: subtotal,
         margemLucroValor: margemLucroValor,
-        margemLucroPercentual: margemLucroPercentual,
-        totalFinal: totalFinal,
-        taxaCreditoValor: taxaCreditoValor,
-        taxaCreditoPercentual: taxaCreditoPercentual,
-        totalFinalComTaxas: totalFinalComTaxas
+        taxaCreditoValor: taxaCreditoValor
+        // *** FIM - Salvando dados detalhados na nota ***
     };
 
-    precificacoesGeradas.push(nota);
+    precificacoesGeradas.push(precificacao);
     atualizarTabelaPrecificacoesGeradas();
-    salvarDados();
-    backupAutomatico();
+    salvarDados(); // Salva após gerar a nota
+    backupAutomatico(); // Backup automático ao gerar nota
 
-    // --- GERAÇÃO DA PÁGINA HTML PARA IMPRESSÃO ---
-    const notaHTML = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Nota de Precificação ${numeroAno}</title>
-            <style>
-                body { font-family: 'Roboto', Arial, sans-serif; }
-                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-                th { background-color: #cae6e7; }
-                .total-line { border-top: 2px solid #7aa2a9; margin-top: 15px; }
-                .subtotal-line { border-top: 2px solid #7aa2a9; margin: 15px 0; }
-                .total { font-weight: bold; font-size: 1.1em; }
-            </style>
-        </head>
-        <body>
-            <h1>Nota de Precificação ${numeroAno}</h1>
-            ${nomeCliente ? `<p><strong>Cliente:</strong> ${nomeCliente}</p>` : ''}
-            <p><strong>Produto:</strong> ${produtoNome}</p>
-            <p><strong>Horas para Conclusão:</strong> ${horasProduto}</p>
+    // Limpa os campos após gerar a nota
+    document.getElementById('nome-cliente').value = '';
+    document.getElementById('produto-pesquisa').value = '';
+    document.getElementById('horas-produto').value = '1';
+    document.getElementById('margem-lucro-final').value = margemLucroPadrao; // Usa a variável global
 
-            <table>
-                <thead>
-                    <tr>
-                        <th>Descrição</th>
-                        <th>Valor</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr><td>Custo dos Materiais</td><td>${custoProduto}</td></tr>
-                    <tr><td>Custo da Mão de Obra</td><td>${totalMaoDeObra}</td></tr>
-                    <tr><td>Custos Indiretos</td><td>${custoIndireto}</td></tr>
-                    <tr><td colspan="2" class="subtotal-line"></td></tr>
-                    <tr><td class="total">Subtotal</td><td class="total">${subtotal}</td></tr>
-                    <tr><td>Margem de Lucro (${margemLucroPercentual}%)</td><td>${margemLucroValor}</td></tr>
-                    <tr><td>Total (com Margem)</td><td>${totalFinal}</td></tr>
-                    ${taxaCreditoPercentual > 0 ? `<tr><td>Taxa de Crédito (${taxaCreditoPercentual}%)</td><td>${taxaCreditoValor}</td></tr>` : ''}
-                    <tr><td colspan="2" class="total-line"></td></tr>
-                    <tr><td class="total">Total Final ${taxaCreditoPercentual > 0 ? '(com Taxas)' : '(sem Taxas)'}</td><td class="total">${totalFinalComTaxas}</td></tr>
-                </tbody>
-            </table>
-        </body>
-        </html>
-    `;
-
-    // --- ABRIR NOVA JANELA COM A NOTA HTML ---
-    const novaJanela = window.open('', '_blank');
-    novaJanela.document.write(notaHTML);
-    novaJanela.document.close();
-
-    alert(`Nota de Precificação ${numeroAno} gerada e aberta em nova página!`);
+    //Reseta os cálculos para os valores padrão.
+    calcularCustos();
 }
-/* ==== FIM SEÇÃO - PRECIFICAÇÕES GERADAS ==== */
 
-/* ==== INÍCIO SEÇÃO - PRECIFICAÇÕES GERADAS ==== */
 function atualizarTabelaPrecificacoesGeradas() {
     const tbody = document.querySelector('#tabela-precificacoes-geradas tbody');
-    tbody.innerHTML = '';
+    tbody.innerHTML = ''; // Limpa a tabela
 
     precificacoesGeradas.forEach((precificacao, index) => {
         const row = tbody.insertRow();
-        const cellNumeroAno = row.insertCell();
-        const cellNomeCliente = row.insertCell();
-        const cellAcoes = row.insertCell();
 
-        cellNumeroAno.textContent = precificacao.numeroAno;
-        cellNomeCliente.textContent = precificacao.nomeCliente || 'Não informado'; // Se não tiver nome, exibe "Não informado"
+        row.insertCell().textContent = `${precificacao.numero}/${precificacao.ano}`;
+        row.insertCell().textContent = precificacao.cliente;
 
-        const botaoVisualizar = document.createElement('button');
-        botaoVisualizar.textContent = 'Visualizar';
-        botaoVisualizar.onclick = () => visualizarPrecificacao(index);
-        cellAcoes.appendChild(botaoVisualizar);
+        const actionsCell = row.insertCell();
+        const viewButton = document.createElement('button');
+        viewButton.textContent = 'Visualizar';
+        // *** MODIFICAÇÃO: Chamar abrirPrecificacaoEmNovaJanela() ***
+        viewButton.onclick = () => abrirPrecificacaoEmNovaJanela(index);
+        actionsCell.appendChild(viewButton);
     });
 }
 
@@ -1515,280 +1427,382 @@ function buscarPrecificacoesGeradas() {
     const tbody = document.querySelector('#tabela-precificacoes-geradas tbody');
     tbody.innerHTML = '';
 
-    const precificacoesFiltradas = precificacoesGeradas.filter(precificacao => {
-        return (
-            precificacao.numeroAno.toLowerCase().includes(termoBusca) ||
-            (precificacao.nomeCliente && precificacao.nomeCliente.toLowerCase().includes(termoBusca)) // Verifica se nomeCliente existe antes de usar toLowerCase()
-        );
-    });
-
-    precificacoesFiltradas.forEach((precificacao, index) => {
+    precificacoesGeradas.filter(p =>
+        `${p.numero}/${p.ano}`.toLowerCase().includes(termoBusca) ||
+        p.cliente.toLowerCase().includes(termoBusca)
+    ).forEach((precificacao, index) => {
         const row = tbody.insertRow();
-        const cellNumeroAno = row.insertCell();
-        const cellNomeCliente = row.insertCell();
-        const cellAcoes = row.insertCell();
 
-        cellNumeroAno.textContent = precificacao.numeroAno;
-        cellNomeCliente.textContent = precificacao.nomeCliente || 'Não informado';
+        row.insertCell().textContent = `${precificacao.numero}/${precificacao.ano}`;
+        row.insertCell().textContent = precificacao.cliente;
 
-        const botaoVisualizar = document.createElement('button');
-        botaoVisualizar.textContent = 'Visualizar';
-        botaoVisualizar.onclick = () => visualizarPrecificacao(index);
-        cellAcoes.appendChild(botaoVisualizar);
+        const actionsCell = row.insertCell();
+        const viewButton = document.createElement('button');
+        viewButton.textContent = 'Visualizar';
+        viewButton.onclick = () => abrirPrecificacaoEmNovaJanela(index);
+        actionsCell.appendChild(viewButton);
     });
 }
 
-function visualizarPrecificacao(index) {
+function visualizarPrecificacaoHTML(index) {
     const precificacao = precificacoesGeradas[index];
 
-    if (precificacao) {
-        let notaHTML = `
-            <h2>Nota de Precificação ${precificacao.numeroAno}</h2>
-            ${precificacao.nomeCliente ? `<p><strong>Cliente:</strong> ${precificacao.nomeCliente}</p>` : ''}
-            <p><strong>Produto:</strong> ${precificacao.produtoNome}</p>
-            <p><strong>Horas para Concluir o Produto:</strong> ${precificacao.horasProduto}</p>
-            <p><strong>Custo do Produto (Materiais):</strong> ${precificacao.custoProduto}</p>
-            <p><strong>Custo Total Mão de Obra:</strong> ${precificacao.totalMaoDeObra}</p>
-            <p><strong>Custos Indiretos:</strong> ${precificacao.custoIndireto}</p>
-            <hr>
-            <p><strong>Subtotal:</strong> ${precificacao.subtotal}</p>
-            <p><strong>Margem de Lucro (${precificacao.margemLucroPercentual}%):</strong> ${precificacao.margemLucroValor}</p>
-            <p><strong>Total (com Margem de Lucro):</strong> ${precificacao.totalFinal}</p>
-            ${precificacao.taxaCreditoPercentual > 0 ? `<p><strong>Taxa de Compra a Crédito (${precificacao.taxaCreditoPercentual}%):</strong> ${precificacao.taxaCreditoValor}</p>` : ''}
-            <hr>
-            <p><strong>Total Final ${precificacao.taxaCreditoPercentual > 0 ? '(com Taxas)' : '(sem Taxas)'}:</strong> ${precificacao.totalFinalComTaxas}</p>
-        `;
-        alert(notaHTML); // Exibe a nota em um alert (pode ser melhorado para exibir em um modal ou div)
+    if (!precificacao) {
+        return "<p>Precificação não encontrada.</p>"; // Retorna mensagem de erro em HTML
+    }
+
+    let htmlTabela = `
+        <!DOCTYPE html>
+        <html lang="pt-BR">
+        <head>
+            <meta charset="UTF-8">
+            <title>Nota de Precificação Nº ${precificacao.numero}/${precificacao.ano}</title>
+            <style> /* CSS Inline para Teste */
+                body { font-family: 'Roboto', Arial, sans-serif; }
+                .tabela-precificacao-detalhada { width: 95%; border-collapse: collapse; margin: 20px auto; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; border-spacing: 0; }
+                .tabela-precificacao-detalhada th, .tabela-precificacao-detalhada td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 0.95em; }
+                .tabela-precificacao-detalhada th { background-color: #7aa2a9; color: white; font-weight: bold; text-align: center; text-transform: uppercase; padding-top: 12px; padding-bottom: 12px; }
+                .tabela-precificacao-detalhada td:first-child { font-weight: bold; color: #555; width: 40%; }
+                .tabela-precificacao-detalhada td:nth-child(2) { width: 60%; }
+                .tabela-precificacao-detalhada tbody tr:nth-child(even) { background-color: #f9f9f9; }
+                .tabela-precificacao-detalhada tbody tr:hover { background-color: #f2f2f2; }
+            </style>
+        </head>
+        <body>
+            <h2>Nota de Precificação Nº ${precificacao.numero}/${precificacao.ano}</h2>
+            <p><strong>Cliente:</strong> ${precificacao.cliente}</p>
+            <table class="tabela-precificacao-detalhada">
+                <thead>
+                    <tr>
+                        <th colspan="2">Detalhes da Precificação</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Produto:</strong></td>
+                        <td>${precificacao.produto}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Horas para Concluir:</strong></td>
+                        <td>${precificacao.horas}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Custo Total dos Materiais:</strong></td>
+                        <td>${formatarMoeda(precificacao.custoMateriais)}</td>
+                    </tr>
+                     <tr>
+                        <td><strong>Detalhes dos Materiais:</strong></td>
+                        <td><ul>${precificacao.detalhesMateriais.map(detalhe => `<li>${detalhe}</li>`).join('')}</ul></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Custo Mão de Obra:</strong></td>
+                        <td>${formatarMoeda(precificacao.totalMaoDeObra)}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>  • Custo Mão de Obra Base:</strong></td>
+                        <td>${formatarMoeda(precificacao.custoMaoDeObraBase)}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>  • Custo 13º e Férias:</strong></td>
+                        <td>${formatarMoeda(precificacao.custoFerias13o)}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Custos Indiretos Totais:</strong></td>
+                        <td>${formatarMoeda(precificacao.custoIndiretoTotal)}</td>
+                    </tr>
+                     <tr>
+                        <td><strong>Detalhes Custos Indiretos:</strong></td>
+                        <td><ul>${precificacao.detalhesCustosIndiretos.map(detalhe => `<li>${detalhe}</li>`).join('')}</ul></td>
+                    </tr>
+                    <tr>
+                        <td><strong>Subtotal:</strong></td>
+                        <td>${formatarMoeda(precificacao.subtotal)}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Margem de Lucro (${precificacao.margem}%):</strong></td>
+                        <td>${formatarMoeda(precificacao.margemLucroValor)}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Total (com Margem de Lucro):</strong></td>
+                        <td>${formatarMoeda(precificacao.total)}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Taxa de Compra a Crédito:</strong></td>
+                        <td>${formatarMoeda(precificacao.taxaCreditoValor)}</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Total Final (com Taxas):</strong></td>
+                        <td><strong>${formatarMoeda(precificacao.totalComTaxas)}</strong></td>
+                    </tr>
+                </tbody>
+            </table>
+        </body>
+        </html>
+    `;
+    return htmlTabela; // Retorna a string HTML
+}
+
+function abrirPrecificacaoEmNovaJanela(index) {
+    const htmlNota = visualizarPrecificacaoHTML(index); // Obtém o HTML da nota
+    if (!htmlNota) {
+        alert("Erro ao gerar nota de precificação."); // Mensagem de erro, caso `visualizarPrecificacaoHTML` retorne vazio
+        return;
+    }
+
+    const novaJanela = window.open('', '_blank'); // Abre nova janela/aba em branco
+    if (novaJanela) {
+        novaJanela.document.open();
+        novaJanela.document.write(htmlNota); // Escreve o HTML na nova janela
+        novaJanela.document.close();
+    } else {
+        alert("Seu navegador pode ter bloqueado a abertura de uma nova janela. Permita pop-ups para este site.");
     }
 }
 /* ==== FIM SEÇÃO - PRECIFICAÇÕES GERADAS ==== */
 
-
 /* ==== INÍCIO SEÇÃO - IMPORTAR/EXPORTAR/LIMPAR ==== */
-// --- Funções de Importar/Exportar/Limpar (COPIADAS E ADAPTADAS) ---
-
 function exportarDados() {
-    // Agora, exportarDados simplesmente chama backupAutomatico.
-    // A lógica de gerar o nome do arquivo, criar o blob, etc.,
-    // está toda dentro de backupAutomatico.
-    backupAutomatico(); // <-- Backup is triggered here for Export button
+    const dadosParaExportar = JSON.stringify({
+        materiais,
+        maoDeObra,
+        custosIndiretosPredefinidos,
+        custosIndiretosAdicionais,
+        produtos,
+        taxaCredito,
+        margemLucroPadrao,
+        precificacoesGeradas,
+        proximoNumeroPrecificacao
+    });
+    const blob = new Blob([dadosParaExportar], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const agora = new Date();
+    const ano = agora.getFullYear();
+    const mes = (agora.getMonth() + 1).toString().padStart(2, '0'); // Garante dois dígitos
+    const dia = agora.getDate().toString().padStart(2, '0');
+    const hora = agora.getHours().toString().padStart(2, '0');
+    const minuto = agora.getMinutes().toString().padStart(2, '0');
+
+    const nomeArquivo = `${ano}${mes}${dia}_${hora}${minuto}_Backup_Precificacao_Pérola_Rara.json`;
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = nomeArquivo; // Nome do arquivo formatado
+    a.style.display = 'none'; // Oculta o link
+    document.body.appendChild(a); // Adiciona ao corpo do documento
+    a.click(); // Simula o clique
+    document.body.removeChild(a); // Remove o link
+    URL.revokeObjectURL(url); // Libera a URL
+
+    // Atualiza o painel de último backup *após* a exportação
+    atualizarPainelUltimoBackup();
+    backupAutomatico(); // Backup manual via exportar
 }
 
 function importarDados() {
-    const inputImportar = document.getElementById('inputImportar');
-    if (inputImportar.files.length > 0) {
-        const arquivo = inputImportar.files[0];
-        const nomeArquivo = arquivo.name;
-        const leitor = new FileReader();
+  const input = document.getElementById('inputImportar');
+  const file = input.files[0];
 
-        leitor.onload = function(e) {
-            try {
-                const dadosImportados = JSON.parse(e.target.result);
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const dados = JSON.parse(e.target.result);
 
-                // --- IMPORTAÇÃO SEGURA (com verificações) ---
-                materiais = dadosImportados.materiais || [];
-                maoDeObra = dadosImportados.maoDeObra || { salario: 0, horas: 220, valorHora: 0, incluirFerias13o: false, custoFerias13o: 0 };
-                custosIndiretosPredefinidos = dadosImportados.custosIndiretosPredefinidos || JSON.parse(JSON.stringify(custosIndiretosPredefinidosBase)); //  Restaura a base
-                custosIndiretosAdicionais = dadosImportados.custosIndiretosAdicionais || [];
-                produtos = dadosImportados.produtos || [];
-                taxaCredito = dadosImportados.taxaCredito || {percentual: 5, incluir: false};
-                margemLucroPadrao = dadosImportados.margemLucroPadrao || 50;
-                precificacoesGeradas = dadosImportados.precificacoesGeradas || []; // **ALTERAÇÃO: Importa precificacoesGeradas**
-                proximoNumeroPrecificacao = dadosImportados.proximoNumeroPrecificacao || 1; // **ALTERAÇÃO: Importa proximoNumeroPrecificacao**
+        // Validação básica para evitar erros
+        if (typeof dados !== 'object' || dados === null) {
+           throw new Error('Dados inválidos no arquivo.');
+        }
 
+        // Importa os dados (com tratamento para arrays)
+        materiais = Array.isArray(dados.materiais) ? dados.materiais : [];
+        maoDeObra = typeof dados.maoDeObra === 'object' && dados.maoDeObra !== null ? dados.maoDeObra : maoDeObra;
+        custosIndiretosPredefinidos = Array.isArray(dados.custosIndiretosPredefinidos) ? dados.custosIndiretosPredefinidos : custosIndiretosPredefinidosBase; //Usa o base, caso esteja vazio.
+        custosIndiretosAdicionais = Array.isArray(dados.custosIndiretosAdicionais) ? dados.custosIndiretosAdicionais : [];
+        produtos = Array.isArray(dados.produtos) ? dados.produtos : [];
+        taxaCredito = typeof dados.taxaCredito === 'object' && dados.taxaCredito !== null ? dados.taxaCredito : { percentual: 5, incluir: false };
+        margemLucroPadrao = typeof dados.margemLucroPadrao === 'number' ? dados.margemLucroPadrao : 50;
+        precificacoesGeradas = Array.isArray(dados.precificacoesGeradas) ? dados.precificacoesGeradas : [];
+        proximoNumeroPrecificacao = typeof dados.proximoNumeroPrecificacao === 'number' ? dados.proximoNumeroPrecificacao : 1;
 
-                salvarDados();  // <-- Importante! Salva após importar.
+        // Atualiza as tabelas e campos
+        atualizarTabelaMateriaisInsumos();
+        atualizarTabelaCustosIndiretos();
+        carregarCustosIndiretosPredefinidos();
+        atualizarTabelaProdutosCadastrados();
+        atualizarTabelaPrecificacoesGeradas();
 
-                const match = nomeArquivo.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})/);
-                if (match) {
-                    const [, ano, mes, dia, hora, minuto] = match;
-                    const dataArquivo = new Date(`${ano}-${mes}-${dia}T${hora}:${minuto}`);
-                    // Removido: localStorage.setItem('ultimoBackup', ...);  A importação NÃO é um backup.
-                }
+        // Atualiza os campos de mão de obra
+        document.getElementById('salario-receber').value = maoDeObra.salario;
+        document.getElementById('horas-trabalhadas').value = maoDeObra.horas;
+        document.getElementById('incluir-ferias-13o-sim').checked = maoDeObra.incluirFerias13o;
+        document.getElementById('incluir-ferias-13o-nao').checked = !maoDeObra.incluirFerias13o;
+        calcularValorHora(); // Para exibir os valores
+        calcularCustoFerias13o();
 
-                alert('Dados importados com sucesso!');
+        //Atualiza os campos de taxa de crédito e margem.
+        document.getElementById('margem-lucro-final').value = margemLucroPadrao;
+        document.getElementById('taxa-credito-percentual').value = taxaCredito.percentual;
+         if (taxaCredito.incluir) {
+            document.getElementById('incluir-taxa-credito-sim').checked = true;
+        } else {
+            document.getElementById('incluir-taxa-credito-nao').checked = true;
+        }
 
-                // --- ATUALIZAÇÃO APÓS IMPORTAR ---
-                carregarCustosIndiretosPredefinidos();
-                atualizarTabelaMateriaisInsumos();
-                atualizarTabelaCustosIndiretos();
-                atualizarTabelaProdutosCadastrados();
-                atualizarTabelaPrecificacoesGeradas(); // **NOVO: Atualiza tabela de precificações**
-                atualizarPainelUltimoBackup();
+        calcularCustos(); // Recalcula tudo
 
-                // --- RECARREGAR VALORES NOS CAMPOS (MÃO DE OBRA) ---
-                document.getElementById('salario-receber').value = maoDeObra.salario;
-                document.getElementById('horas-trabalhadas').value = maoDeObra.horas;
-                document.getElementById('valor-hora').value = maoDeObra.valorHora.toFixed(2);
-                document.getElementById('custo-ferias-13o').value = maoDeObra.custoFerias13o.toFixed(2);
-                document.getElementById('incluir-ferias-13o-sim').checked = maoDeObra.incluirFerias13o;
-                document.getElementById('incluir-ferias-13o-nao').checked = !maoDeObra.incluirFerias13o;
+        alert('Dados importados com sucesso!');
 
-                // --- RECARREGAR VALORES NOS CAMPOS (CÁLCULO) ---
-                document.getElementById('margem-lucro-final').value = margemLucroPadrao;
-                document.getElementById('taxa-credito-percentual').value = taxaCredito.percentual;
-                document.getElementById('incluir-taxa-credito-sim').checked = taxaCredito.incluir;
-                document.getElementById('incluir-taxa-credito-nao').checked = !taxaCredito.incluir;
-
-
-                // --- MODO EDIÇÃO (MÃO DE OBRA) ---
-                if (modoEdicaoMaoDeObra) {
-                    document.getElementById('btn-salvar-mao-de-obra').style.display = 'none';
-                    document.getElementById('btn-editar-mao-de-obra').style.display = 'inline-block';
-                    document.getElementById('salario-receber').readOnly = true;
-                    document.getElementById('horas-trabalhadas').readOnly = true;
-                } else {
-                    document.getElementById('btn-salvar-mao-de-obra').style.display = 'inline-block';
-                    document.getElementById('btn-editar-mao-de-obra').style.display = 'none';
-                    document.getElementById('salario-receber').readOnly = false;
-                    document.getElementById('horas-trabalhadas').readOnly = false;
-                }
-
-                calcularCustos(); // <--  Recalcula tudo após importar e atualizar campos
-
-                mostrarSubMenu('calculo-precificacao'); //  Volta para a seção de cálculo
-                backupAutomatico(); // <-- Backup is triggered here for Import button
-            } catch (erro) {
-                alert('Erro ao importar dados: ' + erro.message);
-            }
-        };
-
-        leitor.readAsText(arquivo);
-    } else {
-        alert('Selecione um arquivo para importar.');
-    }
+      } catch (error) {
+        console.error('Erro ao importar dados:', error);
+        alert('Erro ao importar dados. Verifique o arquivo e tente novamente.');
+      }
+    };
+    reader.readAsText(file);
+  } else {
+    alert('Nenhum arquivo selecionado.');
+  }
 }
 
-
 function salvarDados() {
-    localStorage.setItem('materiaisPrecificacao', JSON.stringify(materiais));
-    localStorage.setItem('maoDeObraPrecificacao', JSON.stringify(maoDeObra));
-    localStorage.setItem('custosIndiretosPredefinidosPrecificacao', JSON.stringify(custosIndiretosPredefinidos));
-    localStorage.setItem('custosIndiretosAdicionaisPrecificacao', JSON.stringify(custosIndiretosAdicionais));
-    localStorage.setItem('produtosPrecificacao', JSON.stringify(produtos));
-    localStorage.setItem('taxaCreditoPrecificacao', JSON.stringify(taxaCredito)); // Salva taxaCredito
-    localStorage.setItem('margemLucroPadraoPrecificacao', JSON.stringify(margemLucroPadrao)); // Salva margemLucro
-    localStorage.setItem('precificacoesGeradasPrecificacao', JSON.stringify(precificacoesGeradas)); // **NOVO: Salva precificacoesGeradas**
-    localStorage.setItem('proximoNumeroPrecificacao', JSON.stringify(proximoNumeroPrecificacao)); // **NOVO: Salva proximoNumeroPrecificacao**
+    const dados = {
+        materiais,
+        maoDeObra,
+        custosIndiretosPredefinidos,
+        custosIndiretosAdicionais,
+        produtos,
+        taxaCredito,
+        margemLucroPadrao,
+        precificacoesGeradas,
+        proximoNumeroPrecificacao
+    };
+    localStorage.setItem('dadosPrecificacao', JSON.stringify(dados));
 
+    // Backup automático foi removido daqui, agora é chamado explicitamente nos botões de ação.
 }
 
 function carregarDados() {
-    materiais = JSON.parse(localStorage.getItem('materiaisPrecificacao')) || [];
-    maoDeObra = JSON.parse(localStorage.getItem('maoDeObraPrecificacao')) || { salario: 0, horas: 220, valorHora: 0, incluirFerias13o: false, custoFerias13o: 0 };
-    custosIndiretosPredefinidos = JSON.parse(localStorage.getItem('custosIndiretosPredefinidosPrecificacao')) || JSON.parse(JSON.stringify(custosIndiretosPredefinidosBase)); // Restaura valores base
-    custosIndiretosAdicionais = JSON.parse(localStorage.getItem('custosIndiretosAdicionaisPrecificacao')) || [];
-    produtos = JSON.parse(localStorage.getItem('produtosPrecificacao')) || [];
-     // CARREGA TAXA DE CRÉDITO E MARGEM DE LUCRO
-    taxaCredito = JSON.parse(localStorage.getItem('taxaCreditoPrecificacao')) || {percentual: 5, incluir: false};
-    margemLucroPadrao = JSON.parse(localStorage.getItem('margemLucroPadraoPrecificacao')) || 50;
-    precificacoesGeradas = JSON.parse(localStorage.getItem('precificacoesGeradasPrecificacao')) || []; // **NOVO: Carrega precificacoesGeradas**
-    proximoNumeroPrecificacao = JSON.parse(localStorage.getItem('proximoNumeroPrecificacao')) || 1; // **NOVO: Carrega proximoNumeroPrecificacao**
+    try {
+        const dadosSalvos = localStorage.getItem('dadosPrecificacao');
+        if (dadosSalvos) {
+            const dados = JSON.parse(dadosSalvos);
+            console.log("Dados Carregados:", dados); // ADICIONADO CONSOLE.LOG
+
+            // Carrega os dados (com tratamento para arrays, para evitar erros)
+            materiais = Array.isArray(dados.materiais) ? dados.materiais : [];
+            maoDeObra = typeof dados.maoDeObra === 'object' && dados.maoDeObra !== null ? dados.maoDeObra : maoDeObra;
+            custosIndiretosPredefinidos = Array.isArray(dados.custosIndiretosPredefinidos) ? dados.custosIndiretosPredefinidos : custosIndiretosPredefinidosBase; //Usa o base se vier vazio
+            custosIndiretosAdicionais = Array.isArray(dados.custosIndiretosAdicionais) ? dados.custosIndiretosAdicionais : [];
+            produtos = Array.isArray(dados.produtos) ? dados.produtos : [];
+            taxaCredito = typeof dados.taxaCredito === 'object' && dados.taxaCredito !== null ? dados.taxaCredito : { percentual: 5, incluir: false };
+            margemLucroPadrao = typeof dados.margemLucroPadrao === 'number' ? dados.margemLucroPadrao : 50; //Valor padrão.
+            precificacoesGeradas = Array.isArray(dados.precificacoesGeradas) ? dados.precificacoesGeradas : [];
+            proximoNumeroPrecificacao = typeof dados.proximoNumeroPrecificacao === 'number' ? dados.proximoNumeroPrecificacao : 1;
 
 
-    // Verifica se os dados de mão de obra foram carregados e se o modo de edição deve ser ativado
-    const maoDeObraSalva = JSON.parse(localStorage.getItem('maoDeObraPrecificacao'));
-    if (maoDeObraSalva && maoDeObraSalva.salario !== undefined) {
-        modoEdicaoMaoDeObra = true;
+            // Atualiza as tabelas
+            atualizarTabelaMateriaisInsumos();
+            atualizarTabelaCustosIndiretos();
+            carregarCustosIndiretosPredefinidos(); // Recarrega a lista
+            atualizarTabelaProdutosCadastrados();
+            atualizarTabelaPrecificacoesGeradas();
+
+             // Atualiza os campos de mão de obra
+            document.getElementById('salario-receber').value = maoDeObra.salario;
+            document.getElementById('horas-trabalhadas').value = maoDeObra.horas;
+            document.getElementById('incluir-ferias-13o-sim').checked = maoDeObra.incluirFerias13o;
+            document.getElementById('incluir-ferias-13o-nao').checked = !maoDeObra.incluirFerias13o;
+            calcularValorHora();  //Para exibir os valores
+            calcularCustoFerias13o();
+
+            //Atualiza visualmente os campos de taxa e margem
+            document.getElementById('margem-lucro-final').value = margemLucroPadrao;
+            document.getElementById('taxa-credito-percentual').value = taxaCredito.percentual;
+
+            if(taxaCredito.incluir){
+              document.getElementById('incluir-taxa-credito-sim').checked = true;
+            } else{
+              document.getElementById('incluir-taxa-credito-nao').checked = true;
+            }
+
+            calcularCustos(); // Recalcula tudo.
+
+        } else {
+            console.log("Nenhum dado encontrado no localStorage."); // Mensagem no console
+        }
+    } catch (error) {
+        console.error("Erro ao carregar dados do localStorage:", error);
+        alert("Erro ao carregar dados salvos. Os valores padrão serão usados."); // Aviso para o usuário
     }
 }
 
 function atualizarPainelUltimoBackup() {
-    const ultimoBackup = JSON.parse(localStorage.getItem('ultimoBackup'));
+    const ultimoBackup = localStorage.getItem('ultimoBackup');
     const painel = document.getElementById('ultimoBackup');
 
     if (ultimoBackup) {
-        const data = new Date(ultimoBackup.data);
-        const dataFormatada = `${data.getDate().toString().padStart(2, '0')}/${(data.getMonth() + 1).toString().padStart(2, '0')}/${data.getFullYear()} ${data.getHours().toString().padStart(2, '0')}:${data.getMinutes().toString().padStart(2, '0')}`;
+        const { nomeArquivo, data } = JSON.parse(ultimoBackup);
+        const dataObj = new Date(data);
 
-        painel.innerHTML = `Último backup: ${dataFormatada}`;
+        // Formata a data/hora
+        const dataFormatada = dataObj.toLocaleDateString('pt-BR');
+        const horaFormatada = dataObj.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+
+        painel.textContent = `Último backup: ${nomeArquivo} (${dataFormatada} às ${horaFormatada})`;
     } else {
-        painel.innerHTML = 'Nenhum backup encontrado';
+        painel.textContent = 'Nenhum backup encontrado.';
     }
 }
 
 function limparPagina() {
-    if (confirm("Tem certeza que deseja limpar todos os dados? Esta ação é irreversível.")) {
-        localStorage.removeItem('materiaisPrecificacao');
-        localStorage.removeItem('maoDeObraPrecificacao');
-        localStorage.removeItem('custosIndiretosPredefinidosPrecificacao');
-        localStorage.removeItem('custosIndiretosAdicionaisPrecificacao');
-        localStorage.removeItem('produtosPrecificacao');
-        localStorage.removeItem('ultimoBackup');  //  <--  ADICIONADO
-        localStorage.removeItem('taxaCreditoPrecificacao'); // Remove taxaCredito
-        localStorage.removeItem('margemLucroPadraoPrecificacao'); // Remove margemLucro
-        localStorage.removeItem('precificacoesGeradasPrecificacao'); // **NOVO: Remove precificacoesGeradas**
-        localStorage.removeItem('proximoNumeroPrecificacao'); // **NOVO: Remove proximoNumeroPrecificacao**
+    if (confirm('Tem certeza que deseja limpar todos os dados? Essa ação não pode ser desfeita.')) {
+        localStorage.removeItem('dadosPrecificacao');
+        localStorage.removeItem('ultimoBackup');
 
-
-        // Resetar as variáveis
+        // Zera todas as variáveis
         materiais = [];
         maoDeObra = { salario: 0, horas: 220, valorHora: 0, incluirFerias13o: false, custoFerias13o: 0 };
-        custosIndiretosPredefinidos = JSON.parse(JSON.stringify(custosIndiretosPredefinidosBase)); // Reset para valores base
+        custosIndiretosPredefinidos = JSON.parse(JSON.stringify(custosIndiretosPredefinidosBase)); //Restaura o array base.
         custosIndiretosAdicionais = [];
         produtos = [];
-        modoEdicaoMaoDeObra = false; // Reset do modo de edição
-        novoCustoIndiretoCounter = 0;
-        taxaCredito = {percentual: 5, incluir: false}; // Reset da taxa
-        margemLucroPadrao = 50; //Reset Margem de Lucro.
-        precificacoesGeradas = []; // **NOVO: Reseta precificacoesGeradas**
-        proximoNumeroPrecificacao = 1; // **NOVO: Reseta proximoNumeroPrecificacao**
+        taxaCredito = { percentual: 5, incluir: false };
+        margemLucroPadrao = 50;
+        precificacoesGeradas = [];
+        proximoNumeroPrecificacao = 1;
 
-        // Limpar as tabelas e formulários
+
+        // Limpa as tabelas
         atualizarTabelaMateriaisInsumos();
         atualizarTabelaCustosIndiretos();
         atualizarTabelaProdutosCadastrados();
-        atualizarTabelaPrecificacoesGeradas(); // **NOVO: Limpa tabela de precificações**
-        carregarCustosIndiretosPredefinidos(); // Recarrega a lista de custos indiretos (vazia)
+        atualizarTabelaPrecificacoesGeradas();
+        carregarCustosIndiretosPredefinidos(); // Recarrega a lista limpa.
 
-        // Limpar campos de formulário específicos
+        // Limpa os formulários
         limparFormulario('form-materiais-insumos');
         limparFormulario('form-mao-de-obra');
         limparFormulario('form-produtos-cadastrados');
-        limparFormulario('form-calculo-precificacao'); // **NOVO: Limpa campo nome do cliente**
-        document.querySelector('#tabela-materiais-produto tbody').innerHTML = ''; // Limpa tabela de materiais do produto
+        document.querySelector('#tabela-materiais-produto tbody').innerHTML = ''; //E a tabela de materiais do produto
 
-        // Resetar campos de mão de obra
+        // Reseta os campos de mão de obra
         document.getElementById('salario-receber').value = '';
-        document.getElementById('horas-trabalhadas').value = '220';
-        document.getElementById('valor-hora').value = '';
-        document.getElementById('custo-ferias-13o').value = '0.00';
+        document.getElementById('horas-trabalhadas').value = 220;
         document.getElementById('incluir-ferias-13o-nao').checked = true;
-        document.getElementById('incluir-ferias-13o-sim').checked = false;
+        calcularValorHora(); // Recalcula para exibir 0
+        calcularCustoFerias13o();
 
-         // Resetar campos de cálculo
-         document.getElementById('nome-cliente').value = ''; // **NOVO: Limpa campo nome do cliente**
-         document.getElementById('produto-pesquisa').value = '';
-         document.getElementById('horas-produto').value = '1';
-         document.getElementById('custo-produto').textContent = 'R$ 0,00';
-         document.getElementById('custo-mao-de-obra-detalhe').textContent = 'R$ 0,00';
-         document.getElementById('custo-ferias-13o-detalhe').textContent = 'R$ 0,00';
-         document.getElementById('total-mao-de-obra').textContent = 'R$ 0,00';
-         document.getElementById('custo-indireto').textContent = 'R$ 0,00';
-         document.getElementById('subtotal').textContent = 'R$ 0,00';
-         document.getElementById('margem-lucro-valor').textContent = 'R$ 0,00';
-         document.getElementById('margem-lucro-final').value = '0';
-         document.getElementById('total-final').textContent = 'R$ 0,00';
-         document.getElementById('taxa-credito-valor').textContent = 'R$ 0,00';
-         document.getElementById('incluir-taxa-credito-nao').checked = true;
-         document.getElementById('incluir-taxa-credito-sim').checked = false;
-         document.getElementById('taxa-credito-percentual').value = '6.00';
-         document.getElementById('total-final-com-taxas').textContent = 'R$ 0,00';
-         document.getElementById('detalhes-produto').style.display = 'none';
-         document.getElementById('lista-materiais-produto').innerHTML = '';
-         document.getElementById('lista-custos-indiretos-detalhes').innerHTML = '';
+        //Reseta visualmente os campos de taxa e margem
+        document.getElementById('margem-lucro-final').value = margemLucroPadrao;
+        document.getElementById('taxa-credito-percentual').value = taxaCredito.percentual;
+        document.getElementById('incluir-taxa-credito-nao').checked = true;
 
+        // Limpa o painel de último backup
+        atualizarPainelUltimoBackup();
 
-        // Resetar estado dos botões (mão de obra)
-        document.getElementById('btn-salvar-mao-de-obra').style.display = 'inline-block';
-        document.getElementById('btn-editar-mao-de-obra').style.display = 'none';
-        document.getElementById('salario-receber').readOnly = false;
-        document.getElementById('horas-trabalhadas').readOnly = false;
-
-        atualizarPainelUltimoBackup();  //  <--  Já estava aqui, mas agora vai zerar o painel.
-        alert('Todos os dados foram apagados.');
-
-        mostrarSubMenu('calculo-precificacao'); // <--  Volta para alguma seção.  Escolha a que preferir.
+        calcularCustos(); //Recalcula tudo (para zerar os valores)
     }
 }
 /* ==== FIM SEÇÃO - IMPORTAR/EXPORTAR/LIMPAR ==== */
+
+
+
