@@ -53,14 +53,13 @@ let novoCustoIndiretoCounter = 0;
 let taxaCredito = { percentual: 5, incluir: false };
 let margemLucroPadrao = 50;
 let precificacoesGeradas = [];
-let proximoNumeroPrecificacao; // Inicializada em carregarDados()
+let proximoNumeroPrecificacao = 1;
 let produtoEmEdicao = null;
 let usuarioLogado = null;
-let materialEmEdicao = null;
+let materialEmEdicao = null; // Variável para controlar a edição de materiais
 // ==== FIM SEÇÃO - VARIÁVEIS GLOBAIS ====
 
 // ==== INÍCIO SEÇÃO - FUNÇÕES DE AUTENTICAÇÃO FIREBASE ====
-// (Nenhuma mudança necessária aqui)
 async function registrarUsuario(email, password) {
     try {
         await createUserWithEmailAndPassword(auth, email, password);
@@ -117,7 +116,7 @@ function atualizarInterfaceUsuario(user) {
         appContainer.style.display = 'block';
         userInfoDisplay.textContent = 'Usuário logado: ' + user.email;
         usuarioLogado = user;
-        carregarDados();  // Carrega os dados ao logar
+        carregarDados();
     } else {
         authContainer.style.display = 'block';
         appContainer.style.display = 'none';
@@ -130,7 +129,6 @@ function atualizarInterfaceUsuario(user) {
 // ==== FIM SEÇÃO - FUNÇÕES DE AUTENTICAÇÃO FIREBASE ====
 
 // ==== INÍCIO SEÇÃO - FUNÇÕES GERAIS DA PÁGINA ====
-// (Nenhuma mudança necessária aqui)
 function mostrarSubMenu(submenuId) {
     const conteudos = ['materiais-insumos', 'mao-de-obra', 'custos-indiretos', 'produtos-cadastrados', 'calculo-precificacao', 'precificacoes-geradas'];
     conteudos.forEach(id => document.getElementById(id).style.display = 'none');
@@ -147,10 +145,11 @@ function limparFormulario(formId) {
     if (form) form.reset();
 }
 
+
+
 // ==== FIM SEÇÃO - FUNÇÕES GERAIS DA PÁGINA ====
 
 // ==== INÍCIO SEÇÃO - FUNÇÕES MATERIAIS E INSUMOS ====
-// (Nenhuma mudança *adicional* necessária aqui - a lógica já está correta)
 function calcularCustoUnitario(tipo, valorTotal, comprimentoCm, volumeMl, pesoG, larguraCm, alturaCm) {
     let custoUnitario = 0;
     switch (tipo) {
@@ -173,7 +172,8 @@ function calcularCustoUnitario(tipo, valorTotal, comprimentoCm, volumeMl, pesoG,
     return custoUnitario;
 }
 
-
+// Função para atualizar os custos dos produtos que usam um determinado material
+// MODIFICADA: atualizarCustosProdutosPorMaterial - Usa o ID do material para comparação
 async function atualizarCustosProdutosPorMaterial(material) {
     if (!material || !material.id) {
         console.error("Material inválido ou sem ID:", material);
@@ -181,18 +181,19 @@ async function atualizarCustosProdutosPorMaterial(material) {
     }
 
     const produtosImpactados = produtos.filter(produto =>
-        produto.materiais.some(item => item.materialId === material.id)
+        produto.materiais.some(item => item.materialId === material.id) // Compara pelo ID
     );
 
     for (const produto of produtosImpactados) {
         for (const item of produto.materiais) {
-            if (item.materialId === material.id) {
+            if (item.materialId === material.id) { // Compara pelo ID
                 item.material.custoUnitario = material.custoUnitario;
                 item.custoTotal = calcularCustoTotalItem(item);
             }
         }
         produto.custoTotal = produto.materiais.reduce((total, item) => total + item.custoTotal, 0);
 
+        // Atualiza no Firestore *cada* produto modificado
         try {
             await updateDoc(doc(db, "produtos", produto.id), {
                 materiais: produto.materiais,
@@ -200,6 +201,7 @@ async function atualizarCustosProdutosPorMaterial(material) {
             });
         } catch (error) {
             console.error("Erro ao atualizar produto no Firestore:", error);
+            // Não interrompe a execução, mas loga o erro
         }
     }
 
@@ -240,6 +242,7 @@ async function cadastrarMaterialInsumo() {
 
     try {
         if (materialEmEdicao) {
+            // Modo de Edição: Atualiza o material existente
             await updateDoc(doc(db, "materiais-insumos", materialEmEdicao.id), {
                 nome: material.nome,
                 tipo: material.tipo,
@@ -252,19 +255,25 @@ async function cadastrarMaterialInsumo() {
                 custoUnitario: material.custoUnitario
             });
 
+            // Atualiza o material no array local 'materiais'
             const index = materiais.findIndex(m => m.id === materialEmEdicao.id);
             if (index !== -1) {
                 materiais[index] = { id: materialEmEdicao.id, ...material };
+                 // Atualiza os custos dos produtos que usam este material
                 await atualizarCustosProdutosPorMaterial(materiais[index]);
             }
 
+
             alert('Material/Insumo atualizado com sucesso!');
-            materialEmEdicao = null;
+            materialEmEdicao = null; // Sai do modo de edição
 
         } else {
+            // Modo de Cadastro: Adiciona um novo material
+
+            // Adiciona o material e *obtém* o ID gerado
             const docRef = await addDoc(collection(db, "materiais-insumos"), material);
-            material.id = docRef.id;
-            materiais.push({ id: material.id, ...material });
+            material.id = docRef.id; // Adiciona o ID ao objeto material
+            materiais.push({ id: material.id, ...material }); // Adiciona ao array local com o ID
 
             alert('Material/Insumo cadastrado com sucesso no Firebase!');
         }
@@ -272,11 +281,14 @@ async function cadastrarMaterialInsumo() {
         atualizarTabelaMateriaisInsumos();
         limparFormulario('form-materiais-insumos');
 
+
     } catch (error) {
         console.error("Erro ao cadastrar/atualizar material no Firebase:", error);
         alert('Erro ao cadastrar/atualizar material/insumo no Firebase.');
     }
 }
+
+
 
 async function atualizarTabelaMateriaisInsumos() {
     const tbody = document.querySelector('#tabela-materiais-insumos tbody');
@@ -284,11 +296,12 @@ async function atualizarTabelaMateriaisInsumos() {
 
     try {
         const querySnapshot = await getDocs(collection(db, "materiais-insumos"));
-        materiais = [];
+        materiais = [];  // Limpa o array 'materiais'
         querySnapshot.forEach((doc) => {
             materiais.push({ id: doc.id, ...doc.data() });
         });
 
+        // ---  PREENCHIMENTO DA TABELA DE MATERIAIS  ---
         materiais.forEach((material) => {
             const row = tbody.insertRow();
 
@@ -314,7 +327,7 @@ async function atualizarTabelaMateriaisInsumos() {
                     break;
             }
             row.insertCell().textContent = dimensoes;
-            row.insertCell().textContent = formatarMoeda(material.valorTotal);
+            row.insertCell().textContent = formatarMoeda(material.valorTotal); // Valor de Loja
             row.insertCell().textContent = formatarMoeda(material.custoUnitario);
 
             const cellAcoes = row.insertCell();
@@ -333,11 +346,13 @@ async function atualizarTabelaMateriaisInsumos() {
     }
 }
 
+// Corrigida: buscarMateriaisCadastrados
 function buscarMateriaisCadastrados() {
     const termoBusca = document.getElementById('busca-material').value.toLowerCase();
     const tbody = document.querySelector('#tabela-materiais-insumos tbody');
-    tbody.innerHTML = '';
+    tbody.innerHTML = '';  // Limpa a tabela antes de repopular
 
+    // Filtra e itera, *tudo em um comando*:
     materiais.filter(material => material.nome.toLowerCase().includes(termoBusca))
         .forEach(material => {
             const row = tbody.insertRow();
@@ -387,8 +402,10 @@ async function editarMaterialInsumo(materialId) {
         return;
     }
 
+    // Entra em modo de edição
     materialEmEdicao = material;
 
+    //Preenche os campos do formulário
     document.getElementById('nome-material').value = material.nome;
     document.querySelector(`input[name="tipo-material"][value="${material.tipo}"]`).checked = true;
     document.getElementById('valor-total-material').value = material.valorTotal;
@@ -408,26 +425,32 @@ async function editarMaterialInsumo(materialId) {
         document.getElementById('largura-cm').value = material.larguraCm;
         document.getElementById('altura-cm').value = material.alturaCm;
     }
+    //Foco no primeiro campo
     document.getElementById('nome-material').focus();
 }
 
+// MODIFICADA:  Função com a lógica de bloqueio e aviso.
 async function removerMaterialInsumo(materialId, isEditing = false) {
+    // 1. VERIFICAÇÃO DE USO:  Verifica se o material está sendo usado em algum produto.
     const materialEmUso = produtos.some(produto =>
         produto.materiais.some(item => item.materialId === materialId)
     );
 
+    // 2. BLOQUEIO E AVISO: Se estiver em uso, bloqueia a exclusão e mostra o aviso.
     if (materialEmUso) {
+        // ---  Mensagem de erro mais detalhada (conforme sugerido)  ---
         let produtosAfetados = produtos.filter(produto =>
             produto.materiais.some(item => item.materialId === materialId)
-        ).map(produto => produto.nome);
+        ).map(produto => produto.nome); // Obtém os nomes
 
         let mensagem = "Este material não pode ser removido porque está sendo utilizado nos seguintes produtos:\n\n";
-        mensagem += produtosAfetados.join("\n");
+        mensagem += produtosAfetados.join("\n"); // Formata a lista
         mensagem += "\n\nRemova ou substitua o material desses produtos antes de excluí-lo.";
         alert(mensagem);
-        return;
+        return; // Interrompe a execução da função aqui.
     }
 
+    // 3. EXCLUSÃO (se não estiver em uso):  Se não estiver em uso, prossegue com a exclusão.
     try {
         await deleteDoc(doc(db, "materiais-insumos", materialId));
         if (!isEditing) {
@@ -443,14 +466,13 @@ async function removerMaterialInsumo(materialId, isEditing = false) {
 // ==== FIM SEÇÃO - FUNÇÕES MATERIAIS E INSUMOS ====
 
 // ==== INÍCIO SEÇÃO - FUNÇÕES MÃO DE OBRA ====
-// (Nenhuma mudança *adicional* necessária aqui - a lógica já está correta)
 function calcularValorHora() {
     const salario = parseFloat(document.getElementById('salario-receber').value);
     const horas = parseInt(document.getElementById('horas-trabalhadas').value);
 
     if (isNaN(salario) || isNaN(horas) || horas === 0) {
-        document.getElementById('valor-hora').value = '';
-        return;
+      document.getElementById('valor-hora').value = '';
+      return;
     }
 
     const valorHora = salario / horas;
@@ -468,7 +490,7 @@ function calcularCustoFerias13o() {
         custoFerias13o = ((salario + (salario / 3)) / 12) / horas;
     }
     document.getElementById('custo-ferias-13o').value = custoFerias13o.toFixed(2);
-    return custoFerias13o;
+     return custoFerias13o;
 }
 
 async function salvarMaoDeObra() {
@@ -480,11 +502,11 @@ async function salvarMaoDeObra() {
     }
 
     const maoDeObraData = {
-        salario: parseFloat(document.getElementById('salario-receber').value),
-        horas: parseInt(document.getElementById('horas-trabalhadas').value),
-        valorHora: calcularValorHora(),
-        incluirFerias13o: document.getElementById('incluir-ferias-13o-sim').checked,
-        custoFerias13o: calcularCustoFerias13o()
+        salario : parseFloat(document.getElementById('salario-receber').value),
+        horas : parseInt(document.getElementById('horas-trabalhadas').value),
+        valorHora : calcularValorHora(),
+        incluirFerias13o : document.getElementById('incluir-ferias-13o-sim').checked,
+        custoFerias13o : calcularCustoFerias13o()
     };
 
     try {
@@ -507,9 +529,11 @@ async function salvarMaoDeObra() {
         document.getElementById('salario-receber').readOnly = true;
         document.getElementById('horas-trabalhadas').readOnly = true;
 
-        await atualizarCustosIndiretosAposMudancaMaoDeObra();
-        calcularCustos(); // Recalcula a precificação
-        // Nenhuma chamada a salvarDados() aqui, pois os dados da mão de obra não são salvos no localStorage
+        // ***  PARTE CRUCIAL:  Recalcular e Atualizar Custos Indiretos ***
+        await atualizarCustosIndiretosAposMudancaMaoDeObra(); // Chamada da nova função
+
+        calcularCustos(); // Recalcula a precificação (se necessário)
+        salvarDados();     // Salva no localStorage (se necessário)
 
     } catch (error) {
         console.error("Erro ao salvar dados de mão de obra no Firebase:", error);
@@ -517,7 +541,7 @@ async function salvarMaoDeObra() {
     }
 }
 
-function editarMaoDeObra() {
+function editarMaoDeObra() { // Removido o async, pois não há await aqui.
     modoEdicaoMaoDeObra = false;
 
     document.getElementById('salario-receber').readOnly = false;
@@ -531,52 +555,64 @@ function editarMaoDeObra() {
 }
 // ==== FIM SEÇÃO - FUNÇÕES MÃO DE OBRA ====
 
-// ==== INÍCIO - FUNÇÃO: Atualização dos Custos Indiretos ====
-// (Nenhuma mudança *adicional* necessária aqui)
+// ==== INÍCIO - NOVA FUNÇÃO: Atualização dos Custos Indiretos ====
+
 async function atualizarCustosIndiretosAposMudancaMaoDeObra() {
     const horasTrabalhadas = maoDeObra.horas;
 
     if (!horasTrabalhadas || horasTrabalhadas <= 0) {
+        // Se as horas não estiverem definidas, não fazemos nada.
+        // Poderíamos, opcionalmente, mostrar um aviso aqui.
         return;
     }
 
+        // 1. Atualizar Custos Indiretos Predefinidos
     for (const custo of custosIndiretosPredefinidos) {
+        // Não precisa mais buscar o custo no array, pois estamos iterando diretamente
         const valorPorHora = custo.valorMensal / horasTrabalhadas;
-        custo.valorPorHora = valorPorHora;
+        custo.valorPorHora = valorPorHora; // Adiciona/atualiza a propriedade
 
-        const index = custosIndiretosPredefinidos.indexOf(custo);
-        if (index !== -1) {
-            const inputValor = document.getElementById(`custo-indireto-${index}`);
-            if (inputValor) {
-                inputValor.value = custo.valorMensal.toFixed(2);
-            }
-        }
+        // Atualizar no DOM, se necessário (dentro do loop, para cada custo):
+         const index = custosIndiretosPredefinidos.indexOf(custo);
+         if (index !== -1) {
+           const inputValor = document.getElementById(`custo-indireto-${index}`);
+           if(inputValor){
+              inputValor.value = custo.valorMensal.toFixed(2); // Mantem valor mensal no input
+           }
+         }
+
     }
 
+
+    // 2. Atualizar Custos Indiretos Adicionais (no Firebase)
     for (const custo of custosIndiretosAdicionais) {
         const valorPorHora = custo.valorMensal / horasTrabalhadas;
-        custo.valorPorHora = valorPorHora;
+          custo.valorPorHora = valorPorHora;
 
         try {
+             // Atualiza *cada* custo adicional no Firestore
             await updateDoc(doc(db, "custos-indiretos-adicionais", custo.id), {
-                valorPorHora: valorPorHora
+               valorPorHora: valorPorHora // Atualiza o valor por hora no firestore
             });
 
         } catch (error) {
             console.error("Erro ao atualizar custo indireto adicional no Firebase:", error);
+            // Não interrompe a execução, mas loga o erro.
         }
     }
 
+    // 3. Atualizar a Tabela (agora usa os valores recalculados)
     atualizarTabelaCustosIndiretos();
 }
-// ==== FIM - FUNÇÃO: Atualização dos Custos Indiretos ====
+
+// ==== FIM - NOVA FUNÇÃO: Atualização dos Custos Indiretos ====
 
 // ==== INÍCIO SEÇÃO - FUNÇÕES CUSTOS INDIRETOS ====
-// (Nenhuma mudança *adicional* necessária aqui - a lógica já está correta)
 async function carregarCustosIndiretosPredefinidos() {
     const listaCustos = document.getElementById('lista-custos-indiretos');
     listaCustos.innerHTML = '';
 
+    // ... (parte dos custos predefinidos permanece a mesma) ...
     custosIndiretosPredefinidosBase.forEach((custoBase, index) => {
         const listItem = document.createElement('li');
         const custoAtual = custosIndiretosPredefinidos.find(c => c.descricao === custoBase.descricao) || { ...custoBase };
@@ -587,17 +623,18 @@ async function carregarCustosIndiretosPredefinidos() {
         `;
         listaCustos.appendChild(listItem);
     });
+    // --- FIM DA PARTE DOS CUSTOS PREDEFINIDOS ---
 
     try {
         const querySnapshot = await getDocs(collection(db, "custos-indiretos-adicionais"));
-        custosIndiretosAdicionais = [];
+        custosIndiretosAdicionais = [];  // Limpa o array ANTES de popular
         querySnapshot.forEach((doc) => {
             custosIndiretosAdicionais.push({ id: doc.id, ...doc.data() });
         });
 
         custosIndiretosAdicionais.forEach((custo) => {
             const listItem = document.createElement('li');
-            listItem.dataset.index = custo.tempIndex;
+            listItem.dataset.index = custo.tempIndex; // Usar tempIndex
             listItem.innerHTML = `
                 <div class="custo-item-nome">${custo.descricao}</div>
                 <input type="number" value="${custo.valorMensal.toFixed(2)}" step="0.01">
@@ -606,12 +643,13 @@ async function carregarCustosIndiretosPredefinidos() {
             `;
             listaCustos.appendChild(listItem);
 
+            // ***  CORREÇÃO:  Adicionar os event listeners *AQUI* ***
             const salvarBtn = listItem.querySelector('.salvar-novo-custo-indireto-btn');
             const removerBtn = listItem.querySelector('.remover-novo-custo-indireto-btn');
 
             if (salvarBtn && removerBtn) {
-                salvarBtn.addEventListener('click', function () { salvarNovoCustoIndiretoLista(this); });
-                removerBtn.addEventListener('click', function () { removerNovoCustoIndiretoLista(this); });
+                salvarBtn.addEventListener('click', function() { salvarNovoCustoIndiretoLista(this); });
+                removerBtn.addEventListener('click', function() { removerNovoCustoIndiretoLista(this); });
             }
         });
 
@@ -621,50 +659,63 @@ async function carregarCustosIndiretosPredefinidos() {
         console.error("Erro ao carregar custos indiretos adicionais do Firebase:", error);
     }
 
-    const botoesSalvarPredefinidos = document.querySelectorAll('.salvar-custo-indireto-predefinido-btn');
-    botoesSalvarPredefinidos.forEach(botao => {
-        botao.addEventListener('click', function () {
-            const descricao = this.dataset.descricao;
-            const index = parseInt(this.dataset.index);
-            salvarCustoIndiretoPredefinido(descricao, index);
+    // ... (restante da função: event listeners para botões predefinidos, etc.) ...
+    // Adiciona event listeners para os botões "Salvar" de custos indiretos predefinidos
+        const botoesSalvarPredefinidos = document.querySelectorAll('.salvar-custo-indireto-predefinido-btn');
+        botoesSalvarPredefinidos.forEach(botao => {
+            botao.addEventListener('click', function() {
+                const descricao = this.dataset.descricao;
+                const index = parseInt(this.dataset.index);
+                salvarCustoIndiretoPredefinido(descricao, index);
+            });
         });
-    });
 
-    const adicionarCustoIndiretoBtn = document.getElementById('adicionarCustoIndiretoBtn');
-    if (adicionarCustoIndiretoBtn) {
-        adicionarCustoIndiretoBtn.addEventListener('click', adicionarNovoCustoIndireto);
-    }
+        // Event listener para o botão "Adicionar Custo Indireto"
+        const adicionarCustoIndiretoBtn = document.getElementById('adicionarCustoIndiretoBtn');
+        if (adicionarCustoIndiretoBtn) {
+            adicionarCustoIndiretoBtn.addEventListener('click', adicionarNovoCustoIndireto);
+        }
+
+        // Adiciona event listeners para os botões "Salvar" de novos custos indiretos.
+        //REMOVIDO, POIS JÁ FOI ADICIONADO
+        //const botoesSalvarNovosCustos = document.querySelectorAll('.salvar-novo-custo-indireto-btn');
+        //botoesSalvarNovosCustos.forEach(botao => {
+        //    botao.addEventListener('click', function() {
+        //        salvarNovoCustoIndiretoLista(this);
+        //    });
+        //});
 }
 
+// MODIFICADA:  salvarCustoIndiretoPredefinido (agora salva no Firestore)
 async function salvarCustoIndiretoPredefinido(descricao, index) {
     const inputValor = document.getElementById(`custo-indireto-${index}`);
     const novoValor = parseFloat(inputValor.value);
 
     if (!isNaN(novoValor)) {
         const custoParaAtualizar = custosIndiretosPredefinidos.find(c => c.descricao === descricao);
-        if (custoParaAtualizar) {
+        if(custoParaAtualizar){
             custoParaAtualizar.valorMensal = novoValor;
-            custoParaAtualizar.valorPorHora = novoValor / maoDeObra.horas;
+            custoParaAtualizar.valorPorHora = novoValor / maoDeObra.horas; // Calcula o valor por hora
             try {
+                // Salva no Firestore.  Usamos setDoc com o ID sendo a descrição.
                 await setDoc(doc(db, "custos-indiretos-predefinidos", descricao), custoParaAtualizar);
-                alert("Custo indireto predefinido salvo com sucesso!");
+                alert("Custo indireto predefinido salvo com sucesso!"); // Mensagem de sucesso
 
             } catch (error) {
                 console.error("Erro ao salvar custo indireto predefinido no Firebase:", error);
                 alert("Erro ao salvar custo indireto predefinido. Tente novamente.");
-                return;
+                return; // Importante:  Sai da função em caso de erro.
             }
         }
 
-        atualizarTabelaCustosIndiretos();
-        calcularCustos();
-        // Nenhuma chamada a salvarDados() aqui, pois os custos indiretos predefinidos não são salvos no localStorage
+        atualizarTabelaCustosIndiretos(); // Atualiza a exibição
+        calcularCustos();               // Recalcula a precificação
+        salvarDados();                 // Salva no localStorage (opcional, mas recomendado)
 
     } else {
         alert("Por favor, insira um valor numérico válido.");
     }
 }
-
 function adicionarNovoCustoIndireto() {
     const listaCustos = document.getElementById('lista-custos-indiretos');
     const listItem = document.createElement('li');
@@ -678,15 +729,17 @@ function adicionarNovoCustoIndireto() {
     `;
     listaCustos.appendChild(listItem);
 
+    // ADD EVENT LISTENERS HERE, AFTER APPENDING listItem:
     const salvarBtn = listItem.querySelector('.salvar-novo-custo-indireto-btn');
     const removerBtn = listItem.querySelector('.remover-novo-custo-indireto-btn');
 
-    if (salvarBtn && removerBtn) {
-        salvarBtn.addEventListener('click', function () { salvarNovoCustoIndiretoLista(this); });
-        removerBtn.addEventListener('click', function () { removerNovoCustoIndiretoLista(this); });
+    if (salvarBtn && removerBtn) { // Check if buttons were found
+        salvarBtn.addEventListener('click', function() { salvarNovoCustoIndiretoLista(this); });
+        removerBtn.addEventListener('click', function() { removerNovoCustoIndiretoLista(this); });
     }
 }
 
+// MODIFICADA: salvarNovoCustoIndiretoLista (agora salva valorPorHora no Firestore e tem mensagem)
 async function salvarNovoCustoIndiretoLista(botao) {
     const listItem = botao.parentNode;
     const descricaoInput = listItem.querySelector('.custo-item-nome');
@@ -696,13 +749,15 @@ async function salvarNovoCustoIndiretoLista(botao) {
     const descricao = descricaoInput.value.trim();
     const valorMensal = parseFloat(valorInput.value);
 
+
     if (descricao && !isNaN(valorMensal)) {
         const custoData = {
             descricao: descricao,
             valorMensal: valorMensal,
-            valorPorHora: valorMensal / maoDeObra.horas,
+            valorPorHora: valorMensal / maoDeObra.horas, // Calcula e armazena valorPorHora
             tempIndex: index
         };
+
 
         try {
             let custoId = botao.dataset.id;
@@ -721,9 +776,10 @@ async function salvarNovoCustoIndiretoLista(botao) {
                 custosIndiretosAdicionais.push({ id: custoId, ...custoData });
             }
 
-            atualizarTabelaCustosIndiretos();
-            calcularCustos();
-            // Nenhuma chamada a salvarDados() aqui, pois os custos indiretos adicionais não são salvos no localStorage
+            atualizarTabelaCustosIndiretos(); // Usa os valores corretos
+            calcularCustos();                // Recalcula
+            salvarDados();                  // Salva
+            alert("Custo indireto adicional salvo com sucesso!"); // Mensagem de sucesso
 
         } catch (error) {
             console.error("Erro ao salvar novo custo indireto no Firebase:", error);
@@ -734,7 +790,6 @@ async function salvarNovoCustoIndiretoLista(botao) {
         alert("Por favor, preencha a descrição e insira um valor numérico válido.");
     }
 }
-
 async function removerNovoCustoIndiretoLista(botaoRemover) {
     const listItem = botaoRemover.parentNode;
     const indexToRemove = botaoRemover.dataset.index;
@@ -749,7 +804,7 @@ async function removerNovoCustoIndiretoLista(botaoRemover) {
         listItem.remove();
         atualizarTabelaCustosIndiretos();
         calcularCustos();
-        // Nenhuma chamada a salvarDados() aqui, pois os custos indiretos adicionais não são salvos no localStorage
+        salvarDados();
 
     } catch (error) {
         console.error("Erro ao remover custo indireto do Firebase:", error);
@@ -757,6 +812,7 @@ async function removerNovoCustoIndiretoLista(botaoRemover) {
     }
 }
 
+// MODIFICADA: atualizarTabelaCustosIndiretos (agora usa valorPorHora)
 function atualizarTabelaCustosIndiretos() {
     const tbody = document.querySelector('#tabela-custos-indiretos tbody');
     tbody.innerHTML = '';
@@ -770,14 +826,16 @@ function atualizarTabelaCustosIndiretos() {
         return;
     }
 
+     // Filtra para exibir apenas custos > 0 (ou com valorPorHora, se já tiver sido calculado)
     const custosPredefinidosParaExibir = custosIndiretosPredefinidos.filter(custo => custo.valorMensal > 0 || custo.valorPorHora > 0);
     const custosAdicionaisParaExibir = custosIndiretosAdicionais.filter(custo => custo.valorMensal > 0 || custo.valorPorHora > 0);
 
-    custosPredefinidosParaExibir.forEach((custo) => {
+    custosPredefinidosParaExibir.forEach((custo) => { // Removido o index
         const row = tbody.insertRow();
         row.insertCell().textContent = custo.descricao;
         row.insertCell().textContent = formatarMoeda(custo.valorMensal);
 
+        // Usa o valorPorHora, se existir.  Senão, calcula (mas não salva).
         const valorPorHora = custo.valorPorHora !== undefined ? custo.valorPorHora : custo.valorMensal / horasTrabalhadas;
         row.insertCell().textContent = formatarMoeda(valorPorHora);
 
@@ -793,8 +851,10 @@ function atualizarTabelaCustosIndiretos() {
         row.insertCell().textContent = custo.descricao;
         row.insertCell().textContent = formatarMoeda(custo.valorMensal);
 
+         // Usa o valorPorHora, se existir.  Senão, calcula (mas não salva).
         const valorPorHora = custo.valorPorHora !== undefined ? custo.valorPorHora : custo.valorMensal / horasTrabalhadas;
         row.insertCell().textContent = formatarMoeda(valorPorHora);
+
 
         const cellAcoes = row.insertCell();
         const botaoZerar = document.createElement('button');
@@ -804,13 +864,14 @@ function atualizarTabelaCustosIndiretos() {
     });
 }
 
+// MODIFICADA: buscarCustosIndiretosCadastrados (agora usa valorPorHora e lida com custos zerados)
 function buscarCustosIndiretosCadastrados() {
     const termoBusca = document.getElementById('busca-custo-indireto').value.toLowerCase();
     const tbody = document.querySelector('#tabela-custos-indiretos tbody');
     tbody.innerHTML = '';
 
     const horasTrabalhadas = maoDeObra.horas;
-    if (horasTrabalhadas === undefined || horasTrabalhadas === null || horasTrabalhadas <= 0) {
+     if (horasTrabalhadas === undefined || horasTrabalhadas === null || horasTrabalhadas <= 0) {
         const row = tbody.insertRow();
         const cellMensagem = row.insertCell();
         cellMensagem.textContent = "Preencha as 'Horas trabalhadas por mês' no menu 'Custo de Mão de Obra' para calcular o custo por hora.";
@@ -818,11 +879,14 @@ function buscarCustosIndiretosCadastrados() {
         return;
     }
 
+    // Combina os arrays, filtra, e *depois* faz a busca.
     const custosExibicao = [...custosIndiretosPredefinidos, ...custosIndiretosAdicionais]
-        .filter(custo => custo.valorMensal > 0 || custo.valorPorHora > 0);
+       .filter(custo => custo.valorMensal > 0 || custo.valorPorHora > 0); // Garante que custos zerados *apareçam* se tiverem sido calculados antes.
     const custosFiltrados = custosExibicao.filter(custo => custo.descricao.toLowerCase().includes(termoBusca));
 
-    custosFiltrados.forEach((custo) => {
+   custosFiltrados.forEach((custo) => {
+
+        // Mesma lógica de exibição da atualizarTabelaCustosIndiretos
         const row = tbody.insertRow();
         row.insertCell().textContent = custo.descricao;
         row.insertCell().textContent = formatarMoeda(custo.valorMensal);
@@ -844,15 +908,18 @@ function buscarCustosIndiretosCadastrados() {
     });
 }
 
+
+// MODIFICADA:  zerarCustoIndireto (agora zera valorPorHora também, e lida com Firestore)
 async function zerarCustoIndireto(identificador, tipo) {
     if (tipo === 'predefinido') {
         const index = custosIndiretosPredefinidos.findIndex(c => c.descricao === identificador);
         if (index !== -1) {
-            custosIndiretosPredefinidos[index].valorMensal = 0;
-            custosIndiretosPredefinidos[index].valorPorHora = 0;
-            document.getElementById(`custo-indireto-${index}`).value = '0.00';
-            try {
-                await setDoc(doc(db, "custos-indiretos-predefinidos", identificador), custosIndiretosPredefinidos[index]);
+             custosIndiretosPredefinidos[index].valorMensal = 0;
+             custosIndiretosPredefinidos[index].valorPorHora = 0; // Zera valorPorHora
+             document.getElementById(`custo-indireto-${index}`).value = '0.00';
+              // Zera no firestore
+             try {
+                await setDoc(doc(db, "custos-indiretos-predefinidos", identificador),  custosIndiretosPredefinidos[index]);
             } catch (error) {
                 console.error("Erro ao zerar custo indireto predefinido no Firebase:", error);
                 alert("Erro ao zerar custo indireto predefinido. Tente novamente.");
@@ -861,6 +928,7 @@ async function zerarCustoIndireto(identificador, tipo) {
         }
     } else if (tipo === 'adicional') {
         try {
+            // Zera *ambos* os valores no Firestore
             await updateDoc(doc(db, "custos-indiretos-adicionais", identificador), {
                 valorMensal: 0,
                 valorPorHora: 0
@@ -869,7 +937,7 @@ async function zerarCustoIndireto(identificador, tipo) {
             const custoAdicionalIndex = custosIndiretosAdicionais.findIndex(c => c.id === identificador);
             if (custoAdicionalIndex !== -1) {
                 custosIndiretosAdicionais[custoAdicionalIndex].valorMensal = 0;
-                custosIndiretosAdicionais[custoAdicionalIndex].valorPorHora = 0;
+                custosIndiretosAdicionais[custoAdicionalIndex].valorPorHora = 0; // Zera
             }
 
         } catch (error) {
@@ -880,12 +948,13 @@ async function zerarCustoIndireto(identificador, tipo) {
     }
     atualizarTabelaCustosIndiretos();
     calcularCustos();
-    // Nenhuma chamada a salvarDados() aqui, pois os custos indiretos (predefinidos e adicionais) não são salvos no localStorage
+    salvarDados();
 }
 // ==== FIM SEÇÃO - FUNÇÕES CUSTOS INDIRETOS ====
 
+
 // ==== INÍCIO SEÇÃO - FUNÇÕES PRODUTOS CADASTRADOS ====
-// (Nenhuma mudança *adicional* necessária aqui - a lógica já está correta)
+//MODIFICADA: cadastrarProduto - Adiciona materialId ao item
 async function cadastrarProduto() {
     const nomeProduto = document.getElementById('nome-produto').value;
     if (!nomeProduto) {
@@ -900,6 +969,7 @@ async function cadastrarProduto() {
         const tipoMaterial = linha.cells[1].textContent;
         const custoUnitario = parseFloat(linha.cells[2].textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.'));
 
+        // Coleta os valores dos inputs, usando os data-atributos para identificar o tipo
         let comprimento = 0, largura = 0, altura = 0, volume = 0, peso = 0, quantidadeMaterial = 0;
         if (tipoMaterial === "comprimento") {
             comprimento = parseFloat(linha.querySelector('.dimensoes-input[data-tipo="comprimento"]').value) || 0;
@@ -915,28 +985,31 @@ async function cadastrarProduto() {
         }
         const quantidade = parseFloat(linha.querySelector('.quantidade-input').value) || 0;
 
+
         const materialOriginal = materiais.find(m => m.nome === nomeMaterial);
 
+         // Verifica se o materialOriginal foi encontrado
         if (!materialOriginal) {
             console.error("Material original não encontrado:", nomeMaterial);
-            return;
+            return; // Sai do loop se o material não for encontrado
         }
 
+
         const item = {
-            materialId: materialOriginal.id,
+            materialId: materialOriginal.id, // Adiciona o ID do material
             material: {
                 nome: materialOriginal.nome,
                 custoUnitario: materialOriginal.custoUnitario
             },
             tipo: tipoMaterial,
-            comprimento,
-            largura,
-            altura,
-            volume,
-            peso,
-            quantidade,
-            quantidadeMaterial,
-            custoTotal: calcularCustoTotalItem({
+            comprimento,  // Valores originais (cm, ml, g, etc.)
+            largura,      // Valores originais (cm, ml, g, etc.)
+            altura,       // Valores originais (cm, ml, g, etc.)
+            volume,       // Valores originais (cm, ml, g, etc.)
+            peso,          // Valores originais (cm, ml, g, etc.)
+            quantidade,     // Quantidade
+            quantidadeMaterial, // Quantidade do material *dentro* do produto
+            custoTotal: calcularCustoTotalItem({ // Passa o objeto item completo
                 material: materialOriginal,
                 tipo: tipoMaterial,
                 comprimento,
@@ -960,23 +1033,30 @@ async function cadastrarProduto() {
         custoTotal: custoTotalProduto
     };
 
+
     try {
         if (produtoEmEdicao !== null) {
+            // --- LÓGICA DE EDIÇÃO ---
             await updateDoc(doc(db, "produtos", produtoEmEdicao.id), produtoData);
             alert('Produto atualizado com sucesso no Firebase!');
 
         } else {
+            // --- LÓGICA DE CADASTRO ---
             const docRef = await addDoc(collection(db, "produtos"), produtoData);
-            produtoData.id = docRef.id;
-            produtos.push(produtoData);
+            produtoData.id = docRef.id; // Adiciona o ID ao objeto local
+            produtos.push(produtoData); // Adiciona o novo produto ao array local
             alert('Produto cadastrado com sucesso no Firebase!');
         }
 
+        // Limpa o formulário e a tabela
         document.getElementById('form-produtos-cadastrados').reset();
         document.querySelector('#tabela-materiais-produto tbody').innerHTML = '';
 
+        // Atualiza a tabela de produtos cadastrados
         atualizarTabelaProdutosCadastrados();
+        //salvarDados(); // Salva os dados no localStorage (opcional)  - Removido, pois a atualização já ocorre
         produtoEmEdicao = null;
+
 
     } catch (error) {
         console.error("Erro ao cadastrar/atualizar produto no Firebase:", error);
@@ -997,6 +1077,7 @@ async function atualizarTabelaProdutosCadastrados() {
 
         produtos.forEach((produto, index) => {
             const row = tbody.insertRow();
+
             row.insertCell().textContent = produto.nome;
 
             const materiaisCell = row.insertCell();
@@ -1023,7 +1104,7 @@ async function atualizarTabelaProdutosCadastrados() {
                 } else if (item.tipo === "quilo") {
                     dimensaoTexto = `${item.peso} g`;
                 } else if (item.tipo === "unidade") {
-                    dimensaoTexto = `${item.quantidadeMaterial} un`;
+                    dimensaoTexto = `${item.quantidadeMaterial} un`; // Modificado para quantidadeMaterial
                 }
                 listItem.textContent = `${item.material.nome}: ${dimensaoTexto}`;
                 dimensoesList.appendChild(listItem);
@@ -1048,21 +1129,30 @@ async function atualizarTabelaProdutosCadastrados() {
     }
 }
 
+// Função de busca de produtos (CORRIGIDA)
 function buscarProdutosCadastrados() {
     const termoBusca = document.getElementById('busca-produto').value.toLowerCase();
     const tbody = document.querySelector('#tabela-produtos tbody');
-    tbody.innerHTML = '';
+    tbody.innerHTML = ''; // Limpa a tabela antes de repopular
 
+    // 1. FILTRAGEM:  Filtra os produtos.
     produtos.filter(produto => {
+        // Verifica se o termo de busca está no nome do produto
         const buscaNoNome = produto.nome.toLowerCase().includes(termoBusca);
+
+        // Verifica se o termo de busca está em ALGUM dos nomes dos materiais
         const buscaNosMateriais = produto.materiais.some(item =>
             item.material.nome.toLowerCase().includes(termoBusca)
         );
+
+        // Retorna true SE (buscaNoNome OU buscaNosMateriais) forem verdadeiros
         return buscaNoNome || buscaNosMateriais;
 
-    }).forEach(produto => {
+    }).forEach(produto => { // 2. ITERAÇÃO:  Itera sobre os produtos FILTRADOS
+        // (O restante do código dentro do forEach permanece o mesmo)
 
         const row = tbody.insertRow();
+
         row.insertCell().textContent = produto.nome;
 
         const materiaisCell = row.insertCell();
@@ -1074,7 +1164,7 @@ function buscarProdutosCadastrados() {
         });
         materiaisCell.appendChild(materiaisList);
 
-        const dimensoesCell = row.insertCell();
+         const dimensoesCell = row.insertCell();
         const dimensoesList = document.createElement("ul");
         produto.materiais.forEach(item => {
             const listItem = document.createElement("li");
@@ -1089,7 +1179,7 @@ function buscarProdutosCadastrados() {
             } else if (item.tipo === "quilo") {
                 dimensaoTexto = `${item.peso} g`;
             } else if (item.tipo === "unidade") {
-                dimensaoTexto = `${item.quantidadeMaterial} un`;
+                dimensaoTexto = `${item.quantidadeMaterial} un`; // Corrigido
             }
             listItem.textContent = `${item.material.nome}: ${dimensaoTexto}`;
             dimensoesList.appendChild(listItem);
@@ -1110,6 +1200,7 @@ function buscarProdutosCadastrados() {
     });
 }
 
+//MODIFICADA: adicionarMaterialNaTabelaProduto - Usa o ID do material
 function adicionarMaterialNaTabelaProduto(material, tipo, quantidade, comprimento, largura, altura, volume, peso) {
     const tbody = document.querySelector('#tabela-materiais-produto tbody');
     const row = tbody.insertRow();
@@ -1120,17 +1211,17 @@ function adicionarMaterialNaTabelaProduto(material, tipo, quantidade, compriment
 
     const dimensoesCell = row.insertCell();
     let dimensoesHTML = "";
-    let quantidadeValue = isNaN(quantidade) ? 1 : quantidade;
-    let comprimentoValue = comprimento || 0;
-    let larguraValue = largura || 0;
-    let alturaValue = altura || 0;
-    let volumeValue = volume || 0;
-    let pesoValue = peso || 0;
-    let quantidadeMaterialValue = 1;
+    let quantidadeValue = isNaN(quantidade) ? 1 : quantidade; // Valor padrão e tratamento para NaN
+    let comprimentoValue = comprimento || 0;  //Inicializa com zero
+    let larguraValue = largura || 0; //Inicializa com zero
+    let alturaValue = altura || 0;   //Inicializa com zero
+    let volumeValue = volume || 0; //Inicializa com zero
+    let pesoValue = peso || 0;  //Inicializa com zero
+    let quantidadeMaterialValue = 1; // Inicializa quantidadeMaterial
 
 
-    if (tipo === "comprimento") {
-        comprimentoValue = material.comprimentoCm;
+     if (tipo === "comprimento") {
+        comprimentoValue = material.comprimentoCm; // Valor inicial em CM
         dimensoesHTML = `<input type="number" class="dimensoes-input" value="${comprimentoValue}" data-tipo="comprimento"> cm`;
     } else if (tipo === "area") {
         larguraValue = material.larguraCm;
@@ -1143,9 +1234,9 @@ function adicionarMaterialNaTabelaProduto(material, tipo, quantidade, compriment
         pesoValue = material.pesoG;
         dimensoesHTML = `<input type="number" class="dimensoes-input" value="${pesoValue}" data-tipo="peso"> g`;
     } else if (tipo === "unidade") {
-        quantidadeValue = quantidade || 1;
-        dimensoesHTML = `<input type="number" class="dimensoes-input" value="${quantidadeValue}" data-tipo="quantidadeMaterial"> un`;
-        quantidadeMaterialValue = quantidadeValue;
+        quantidadeValue = quantidade || 1; // Usa a quantidade passada, ou 1 como padrão
+        dimensoesHTML = `<input type="number" class="dimensoes-input" value="${quantidadeValue}" data-tipo="quantidadeMaterial"> un`; // Mudança aqui
+        quantidadeMaterialValue = quantidadeValue; // Atualiza quantidadeMaterial
     }
     dimensoesCell.innerHTML = dimensoesHTML;
 
@@ -1156,42 +1247,52 @@ function adicionarMaterialNaTabelaProduto(material, tipo, quantidade, compriment
     quantidadeInput.value = quantidadeValue;
     quantidadeCell.appendChild(quantidadeInput);
 
+
+    // ---  CRIAÇÃO DO OBJETO ITEM  ---
     const item = {
-        materialId: material.id,
-        material: {
-            nome: material.nome,
-            custoUnitario: material.custoUnitario
-        },
-        tipo: tipo,
-        comprimento: comprimentoValue,
-        largura: larguraValue,
-        altura: alturaValue,
-        volume: volumeValue,
-        peso: pesoValue,
-        quantidade: quantidadeValue,
-        quantidadeMaterial: quantidadeMaterialValue
+      materialId: material.id, // Adiciona o ID do material
+      material: {
+          nome: material.nome,
+          custoUnitario: material.custoUnitario
+      },
+      tipo: tipo,
+      comprimento: comprimentoValue,  //Armazena o valor em CM
+      largura: larguraValue,         //Armazena o valor em CM
+      altura: alturaValue,            //Armazena o valor em CM
+      volume: volumeValue,            //Armazena o valor em ML
+      peso: pesoValue,               //Armazena o valor em G
+      quantidade: quantidadeValue,  // Quantidade utilizada
+      quantidadeMaterial: quantidadeMaterialValue // Adiciona quantidadeMaterial
     };
 
+    // --- CÁLCULO INICIAL DO CUSTO TOTAL ---
     const custoTotal = calcularCustoTotalItem(item);
     row.insertCell().textContent = formatarMoeda(custoTotal);
 
+    // --- BOTÃO REMOVER ---
     const actionsCell = row.insertCell();
     const removeButton = document.createElement('button');
     removeButton.textContent = "Remover";
-    removeButton.onclick = () => removerLinhaMaterial(row.rowIndex - 1);
+    removeButton.onclick = () => removerLinhaMaterial(row.rowIndex -1);  //Passa o Index correto
     actionsCell.appendChild(removeButton);
 
+
+    // --- EVENT LISTENERS PARA ATUALIZAÇÃO ---
+    // Adiciona event listeners para recalcular o custo quando as dimensões/quantidade mudarem
     dimensoesCell.querySelectorAll('.dimensoes-input').forEach(input => {
         input.addEventListener('input', () => atualizarCustoLinha(row, item));
     });
     quantidadeInput.addEventListener('input', () => atualizarCustoLinha(row, item));
 
-    document.getElementById('pesquisa-material').value = '';
-    document.getElementById('resultados-pesquisa').innerHTML = '';
-    document.getElementById('resultados-pesquisa').style.display = 'none';
+
+     document.getElementById('pesquisa-material').value = '';
+     document.getElementById('resultados-pesquisa').innerHTML = '';
+     document.getElementById('resultados-pesquisa').style.display = 'none';
 }
 
+// --- FUNÇÃO AUXILIAR: atualizarCustoLinha ---
 function atualizarCustoLinha(row, item) {
+    // Atualiza os valores no objeto 'item' com base nos inputs
     item.quantidade = parseFloat(row.querySelector('.quantidade-input').value) || 0;
 
     if (item.tipo === "comprimento") {
@@ -1204,21 +1305,25 @@ function atualizarCustoLinha(row, item) {
     } else if (item.tipo === "quilo") {
         item.peso = parseFloat(row.querySelector('.dimensoes-input[data-tipo="peso"]').value) || 0;
     } else if (item.tipo === "unidade") {
-        item.quantidadeMaterial = parseFloat(row.querySelector('.dimensoes-input[data-tipo="quantidadeMaterial"]').value) || 0;
+        item.quantidadeMaterial = parseFloat(row.querySelector('.dimensoes-input[data-tipo="quantidadeMaterial"]').value) || 0; // Atualiza quantidadeMaterial
     }
 
+
+    // Recalcula o custo total
     const novoCustoTotal = calcularCustoTotalItem(item);
-    row.cells[5].textContent = formatarMoeda(novoCustoTotal);
+    row.cells[5].textContent = formatarMoeda(novoCustoTotal); // Atualiza a célula de custo total
 }
 
+// --- FUNÇÃO AUXILIAR: removerLinhaMaterial ---
 function removerLinhaMaterial(rowIndex) {
     const tbody = document.querySelector('#tabela-materiais-produto tbody');
-    tbody.deleteRow(rowIndex);
+    tbody.deleteRow(rowIndex); //Remove pelo rowIndex
 }
 
+//Mantida: calcularCustoTotalItem
 function calcularCustoTotalItem(item) {
     let custoTotal = 0;
-    let quantidade = item.quantidade || 1;
+    let quantidade = item.quantidade || 1; // Garante que quantidade seja pelo menos 1
 
     if (item.tipo === "comprimento") {
         custoTotal = item.material.custoUnitario * (item.comprimento / 100) * quantidade;
@@ -1229,12 +1334,14 @@ function calcularCustoTotalItem(item) {
     } else if (item.tipo === "quilo") {
         custoTotal = item.material.custoUnitario * (item.peso / 1000) * quantidade;
     } else if (item.tipo === "unidade") {
-        let quantidadeMaterial = item.quantidadeMaterial || 1;
+        // Aqui está a mudança:
+        let quantidadeMaterial = item.quantidadeMaterial || 1; // Quantidade do material *dentro* do produto.
         custoTotal = item.material.custoUnitario * quantidadeMaterial * quantidade;
     }
     return custoTotal;
 }
 
+//MODIFICADA: editarProduto - Corrige a busca do material completo
 async function editarProduto(produtoId) {
     produtoEmEdicao = produtos.find(p => p.id === produtoId);
 
@@ -1243,28 +1350,38 @@ async function editarProduto(produtoId) {
         return;
     }
 
+    // Preenche o campo de nome do produto
     document.getElementById('nome-produto').value = produtoEmEdicao.nome;
+
+    // Limpa a tabela de materiais atual
     const tbody = document.querySelector('#tabela-materiais-produto tbody');
     tbody.innerHTML = '';
 
+    // Preenche a tabela de materiais com os dados do produto
     produtoEmEdicao.materiais.forEach(item => {
+        
+              // Encontra o material original completo no array 'materiais' USANDO O ID
         const materialCompleto = materiais.find(m => m.id === item.materialId);
 
-        if (materialCompleto) {
+
+        if (materialCompleto) { //Verifica se achou o material
             adicionarMaterialNaTabelaProduto(
-                materialCompleto,
+                materialCompleto,  // Passa o material completo
                 item.tipo,
                 item.quantidade,
-                item.comprimento,
-                item.largura,
-                item.altura,
-                item.volume,
-                item.peso
+                item.comprimento,  // Passa os valores originais (cm, ml, g, etc.)
+                item.largura,      // Passa os valores originais (cm, ml, g, etc.)
+                item.altura,       // Passa os valores originais (cm, ml, g, etc.)
+                item.volume,       // Passa os valores originais (cm, ml, g, etc.)
+                item.peso          // Passa os valores originais (cm, ml, g, etc.)
             );
-        } else {
+        } else{
             console.error("Material completo não encontrado para item:", item);
         }
+
     });
+
+    // Rola a página para o formulário de cadastro
     document.getElementById('form-produtos-cadastrados').scrollIntoView({ behavior: 'smooth' });
 }
 
@@ -1272,6 +1389,7 @@ async function removerProduto(produtoId) {
     if (confirm('Tem certeza que deseja remover este produto?')) {
         try {
             await deleteDoc(doc(db, "produtos", produtoId));
+            // Remove o produto do array local 'produtos'
             produtos = produtos.filter(p => p.id !== produtoId);
             atualizarTabelaProdutosCadastrados();
             alert('Produto removido com sucesso do Firebase!');
@@ -1281,12 +1399,13 @@ async function removerProduto(produtoId) {
         }
     }
 }
-
+// ===== INÍCIO - MODIFICAÇÃO PARA AUTOCOMPLETE DE MATERIAIS =====
+//MODIFICADA: buscarMateriaisAutocomplete, selecionarMaterial -  Usa o ID
 function buscarMateriaisAutocomplete() {
     const termo = document.getElementById('pesquisa-material').value.toLowerCase();
     const resultadosDiv = document.getElementById('resultados-pesquisa');
     resultadosDiv.innerHTML = '';
-    resultadosDiv.style.display = 'block';
+    resultadosDiv.style.display = 'block'; // Garante que a div de resultados seja exibida
 
     if (!termo) {
         resultadosDiv.classList.add('hidden');
@@ -1309,14 +1428,15 @@ function buscarMateriaisAutocomplete() {
 }
 
 function selecionarMaterial(material) {
-    document.getElementById('pesquisa-material').value = '';
+    document.getElementById('pesquisa-material').value = ''; // Limpa o input de pesquisa
     document.getElementById('resultados-pesquisa').classList.add('hidden');
-    document.getElementById('resultados-pesquisa').innerHTML = '';
+    document.getElementById('resultados-pesquisa').innerHTML = ''; // Limpa os resultados
 
+    // Adiciona o material selecionado na tabela
     adicionarMaterialNaTabelaProduto(
         material,
         material.tipo,
-        1,
+        1, // Quantidade padrão inicial (pode ajustar conforme necessário)
         material.comprimentoCm,
         material.larguraCm,
         material.alturaCm,
@@ -1325,7 +1445,10 @@ function selecionarMaterial(material) {
     );
 }
 
-function buscarProdutosAutocomplete() {
+// ===== FIM - MODIFICAÇÃO PARA AUTOCOMPLETE DE MATERIAIS =====
+
+
+function buscarProdutosAutocomplete() { // Mantém a função de autocomplete de produtos para cálculo de precificação
     const termo = document.getElementById('produto-pesquisa').value.toLowerCase();
     const resultadosDiv = document.getElementById('produto-resultados');
     resultadosDiv.innerHTML = '';
@@ -1359,7 +1482,7 @@ function selecionarProduto(produto) {
 // ==== FIM SEÇÃO - FUNÇÕES PRODUTOS CADASTRADOS ====
 
 // ==== INÍCIO SEÇÃO - FUNÇÕES CÁLCULO DE PRECIFICAÇÃO ====
-// (Nenhuma mudança *adicional* necessária aqui - a lógica já está correta)
+// MODIFICADA: calcularCustos (usa valorPorHora dos custos indiretos)
 function calcularCustos() {
     const produtoSelecionadoNome = document.getElementById('produto-pesquisa').value;
     const produtoSelecionado = produtos.find(p => p.nome === produtoSelecionadoNome);
@@ -1376,9 +1499,11 @@ function calcularCustos() {
     document.getElementById('custo-ferias-13o-detalhe').textContent = formatarMoeda(custoFerias13o);
     document.getElementById('total-mao-de-obra').textContent = formatarMoeda(totalMaoDeObra);
 
+    // Soma os custos indiretos *por hora* e multiplica pelas horas do produto.
     const todosCustosIndiretos = [...custosIndiretosPredefinidos, ...custosIndiretosAdicionais];
-    const custosIndiretosAtivos = todosCustosIndiretos.filter(custo => custo.valorMensal > 0 || custo.valorPorHora > 0);
+    const custosIndiretosAtivos = todosCustosIndiretos.filter(custo => custo.valorMensal > 0 || custo.valorPorHora > 0); // Considera valorPorHora
     const custoIndiretoTotalPorHora = custosIndiretosAtivos.reduce((total, custo) => {
+        // Usa valorPorHora, se existir.  Senão, calcula (mas não salva).
         const valorPorHora = custo.valorPorHora !== undefined ? custo.valorPorHora : (custo.valorMensal / maoDeObra.horas);
         return total + valorPorHora;
     }, 0);
@@ -1386,13 +1511,15 @@ function calcularCustos() {
 
     document.getElementById('custo-indireto').textContent = formatarMoeda(custoIndiretoTotal);
 
+
     const listaCustosIndiretos = document.getElementById('lista-custos-indiretos-detalhes');
     listaCustosIndiretos.innerHTML = '';
     custosIndiretosAtivos.forEach(custo => {
         const li = document.createElement('li');
 
+        // Usa valorPorHora, se existir.  Senão, calcula (e *não* salva).
         const valorPorHora = custo.valorPorHora !== undefined ? custo.valorPorHora : (custo.valorMensal / maoDeObra.horas);
-        const custoTotalItem = valorPorHora * horasProduto;
+        const custoTotalItem = valorPorHora * horasProduto;  // Usa o valor por hora *correto*.
 
         li.textContent = `${custo.descricao} - ${formatarMoeda(custoTotalItem)}`;
         listaCustosIndiretos.appendChild(li);
@@ -1400,13 +1527,15 @@ function calcularCustos() {
 
     document.getElementById('detalhes-custos-indiretos').style.display = 'block';
 
+
     const subtotal = custoProduto + totalMaoDeObra + custoIndiretoTotal;
     document.getElementById('subtotal').textContent = formatarMoeda(subtotal);
 
-    calcularPrecoVendaFinal(); // Chama a próxima etapa
+    calcularPrecoVendaFinal();
 }
 
 function carregarDadosProduto(produto) {
+
     document.getElementById('custo-produto').textContent = formatarMoeda(produto.custoTotal);
 
     const listaMateriais = document.getElementById('lista-materiais-produto');
@@ -1418,7 +1547,8 @@ function carregarDadosProduto(produto) {
         listaMateriais.appendChild(li);
     });
 
-    document.getElementById('detalhes-produto').style.display = 'block';
+     document.getElementById('detalhes-produto').style.display = 'block';
+
 }
 
 function calcularPrecoVendaFinal() {
@@ -1431,18 +1561,17 @@ function calcularPrecoVendaFinal() {
     document.getElementById('margem-lucro-valor').textContent = formatarMoeda(margemLucroValor);
     document.getElementById('total-final').textContent = formatarMoeda(totalFinal);
 
-    calcularTotalComTaxas(); // Chama a próxima etapa
+    calcularTotalComTaxas();
 }
 
-// MODIFICADA: salvarTaxaCredito (agora chama salvarDados())
 async function salvarTaxaCredito() {
     taxaCredito.percentual = parseFloat(document.getElementById('taxa-credito-percentual').value);
     taxaCredito.incluir = document.getElementById('incluir-taxa-credito-sim').checked;
 
     try {
         await setDoc(doc(db, "configuracoes", "taxaCredito"), taxaCredito);
-        calcularTotalComTaxas(); // Recalcula ao salvar
-        salvarDados(); // Salva no localStorage
+        calcularTotalComTaxas();
+        salvarDados();
         console.log('Taxa de crédito salva no Firebase!');
     } catch (error) {
         console.error("Erro ao salvar taxa de crédito no Firebase:", error);
@@ -1450,23 +1579,23 @@ async function salvarTaxaCredito() {
     }
 }
 
-function calcularTotalComTaxas() {
-    const total = parseFloat(document.getElementById('total-final').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) || 0;
+function calcularTotalComTaxas(){
 
-    if (document.getElementById('incluir-taxa-credito-sim').checked) {
-        const taxa = total * (taxaCredito.percentual / 100);
-        const totalComTaxas = total + taxa;
-        document.getElementById('taxa-credito-valor').textContent = formatarMoeda(taxa);
-        document.getElementById('total-final-com-taxas').textContent = formatarMoeda(totalComTaxas);
-    } else {
-        document.getElementById('taxa-credito-valor').textContent = formatarMoeda(0);
-        document.getElementById('total-final-com-taxas').textContent = formatarMoeda(total);
-    }
+  const total = parseFloat(document.getElementById('total-final').textContent.replace(/[^\d,.-]/g, '').replace('.', '').replace(',', '.')) || 0;
+
+  if(document.getElementById('incluir-taxa-credito-sim').checked){
+    const taxa = total * (taxaCredito.percentual/100);
+    const totalComTaxas = total + taxa;
+    document.getElementById('taxa-credito-valor').textContent = formatarMoeda(taxa);
+    document.getElementById('total-final-com-taxas').textContent = formatarMoeda(totalComTaxas);
+  } else{
+    document.getElementById('taxa-credito-valor').textContent = formatarMoeda(0);
+    document.getElementById('total-final-com-taxas').textContent = formatarMoeda(total);
+  }
 }
 // ==== FIM SEÇÃO - FUNÇÕES CÁLCULO DE PRECIFICAÇÃO ====
 
 // ==== INÍCIO SEÇÃO - FUNÇÕES PRECIFICAÇÕES GERADAS ====
-// MODIFICADA: gerarNotaPrecificacao (agora busca e incrementa proximoNumeroPrecificacao do Firebase e chama salvarDados)
 async function gerarNotaPrecificacao() {
     const nomeCliente = document.getElementById('nome-cliente').value || "Não informado";
     const produtoNome = document.getElementById('produto-pesquisa').value;
@@ -1508,27 +1637,10 @@ async function gerarNotaPrecificacao() {
 
     const agora = new Date();
     const ano = agora.getFullYear();
-
-    try {
-        const docRef = doc(db, "configuracoes", "numeracao");
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-            proximoNumeroPrecificacao = docSnap.data().proximoNumero + 1;
-        } else {
-            proximoNumeroPrecificacao = 1;
-        }
-
-        await setDoc(docRef, { proximoNumero: proximoNumeroPrecificacao });
-
-    } catch (error) {
-        console.error("Erro ao buscar/atualizar numeração:", error);
-        alert("Erro ao gerar número da precificação. Tente novamente.");
-        return;
-    }
+    const numeroPrecificacao = proximoNumeroPrecificacao++;
 
     const precificacao = {
-        numero: proximoNumeroPrecificacao,
+        numero: numeroPrecificacao,
         ano: ano,
         cliente: nomeCliente,
         produto: produtoNome,
@@ -1536,6 +1648,7 @@ async function gerarNotaPrecificacao() {
         margem: margemLucro,
         total: totalFinal,
         totalComTaxas: totalComTaxas,
+
         custoMateriais: custoProduto,
         detalhesMateriais: detalhesMateriaisProduto,
         custoMaoDeObraBase: custoMaoDeObraDetalhe,
@@ -1550,9 +1663,9 @@ async function gerarNotaPrecificacao() {
 
     try {
         await addDoc(collection(db, "precificacoes-geradas"), precificacao);
-        precificacoesGeradas.push(precificacao);
+        precificacoesGeradas.push(precificacao); //Adicionado para incluir no array local
         atualizarTabelaPrecificacoesGeradas();
-        salvarDados(); // Salva no localStorage
+        salvarDados();
         alert('Nota de precificação gerada e salva no Firebase!');
 
         document.getElementById('nome-cliente').value = '';
@@ -1590,12 +1703,6 @@ async function atualizarTabelaPrecificacoesGeradas() {
             viewButton.textContent = 'Visualizar';
             viewButton.onclick = () => abrirPrecificacaoEmNovaJanela(precificacao.id);
             actionsCell.appendChild(viewButton);
-
-            // --- ADICIONA O BOTÃO EXCLUIR ---
-            const deleteButton = document.createElement('button');
-            deleteButton.textContent = 'Excluir';
-            deleteButton.onclick = () => removerPrecificacao(precificacao.id); // Chama a função de remover
-            actionsCell.appendChild(deleteButton);
         });
 
     } catch (error) {
@@ -1622,12 +1729,6 @@ function buscarPrecificacoesGeradas() {
         viewButton.textContent = 'Visualizar';
         viewButton.onclick = () => abrirPrecificacaoEmNovaJanela(precificacao.id);
         actionsCell.appendChild(viewButton);
-
-        // --- ADICIONA O BOTÃO EXCLUIR ---
-        const deleteButton = document.createElement('button');
-        deleteButton.textContent = 'Excluir';
-        deleteButton.onclick = () => removerPrecificacao(precificacao.id);
-        actionsCell.appendChild(deleteButton);
     });
 }
 
@@ -1645,7 +1746,7 @@ function visualizarPrecificacaoHTML(precificacaoId) {
             <meta charset="UTF-8">
             <title>Nota de Precificação Nº ${precificacao.numero}/${precificacao.ano}</title>
             <style>
-            body { font-family: 'Roboto', Arial, sans-serif; }
+                body { font-family: 'Roboto', Arial, sans-serif; }
                 .tabela-precificacao-detalhada { width: 95%; border-collapse: collapse; margin: 20px auto; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15); border-radius: 8px; overflow: hidden; border-spacing: 0; }
                 .tabela-precificacao-detalhada th, .tabela-precificacao-detalhada td { border: 1px solid #ddd; padding: 10px; text-align: left; font-size: 0.95em; }
                 .tabela-precificacao-detalhada th { background-color: #7aa2a9; color: white; font-weight: bold; text-align: center; text-transform: uppercase; padding-top: 12px; padding-bottom: 12px; }
@@ -1745,104 +1846,57 @@ function abrirPrecificacaoEmNovaJanela(precificacaoId) {
         alert("Seu navegador pode ter bloqueado a abertura de uma nova janela. Permita pop-ups para este site.");
     }
 }
-
-async function removerPrecificacao(precificacaoId) {
-    if (confirm('Tem certeza que deseja excluir esta precificação? Esta ação é irreversível.')) {
-        try {
-            await deleteDoc(doc(db, "precificacoes-geradas", precificacaoId));
-
-            // Remove do array local
-            precificacoesGeradas = precificacoesGeradas.filter(p => p.id !== precificacaoId);
-
-            // Atualiza a tabela
-            atualizarTabelaPrecificacoesGeradas();
-            alert('Precificação excluída com sucesso!');
-
-        } catch (error) {
-            console.error("Erro ao excluir precificação:", error);
-            alert('Erro ao excluir precificação. Verifique o console para mais detalhes.');
-        }
-    }
-}
 // ==== FIM SEÇÃO - FUNÇÕES PRECIFICAÇÕES GERADAS ====
 
 // ==== INÍCIO SEÇÃO - FUNÇÕES DE SALVAR E CARREGAR DADOS ====
-// ADICIONADA:  Função salvarDados (agora salva só o essencial no localStorage)
 function salvarDados() {
     const dados = {
-        margemLucroPadrao,  // Salva a margem de lucro padrão
-        taxaCredito         // Salva a taxa de crédito
+        margemLucroPadrao,
+        taxaCredito,
+        proximoNumeroPrecificacao
     };
     localStorage.setItem('dadosPrecificacao', JSON.stringify(dados));
 }
 
-// MODIFICADA: carregarDados (agora carrega proximoNumeroPrecificacao do Firebase)
+//MODIFICADA: carregarDados - Agora carrega valorPorHora dos custos indiretos do firestore e predefinidos.
 async function carregarDados() {
     try {
-        // 1. Carrega a numeração PRIMEIRO (do Firebase)
-        const docRef = doc(db, "configuracoes", "numeracao");
-        const docSnap = await getDoc(docRef);
-
-        if (docSnap.exists()) {
-            proximoNumeroPrecificacao = docSnap.data().proximoNumero;
-        } else {
-            proximoNumeroPrecificacao = 1; // Valor inicial
-            // Cria o documento, se não existir.
-            await setDoc(docRef, {proximoNumero: proximoNumeroPrecificacao});
-        }
-
-        // 2. Carrega mão de obra e taxa de crédito (do Firebase)
-        const configuracoesDocs = await getDocs(collection(db, "configuracoes"));
-        configuracoesDocs.forEach(doc => {
-            if (doc.id === 'maoDeObra') {
+        const maoDeObraDoc = await getDocs(collection(db, "configuracoes"));
+        maoDeObraDoc.forEach(doc => {
+            if(doc.id === 'maoDeObra'){
                 maoDeObra = { ...maoDeObra, ...doc.data() };
             }
-            if (doc.id === 'taxaCredito') {
+            if(doc.id === 'taxaCredito'){
                 taxaCredito = { ...taxaCredito, ...doc.data() };
             }
         });
 
-        // 3. Carrega custos indiretos *predefinidos* do Firestore
+        // Carrega custos indiretos *predefinidos* do Firestore
         const custosPredefinidosSnapshot = await getDocs(collection(db, "custos-indiretos-predefinidos"));
         custosPredefinidosSnapshot.forEach(doc => {
+            // Atualiza o array 'custosIndiretosPredefinidos' com os dados do Firestore.
             const custo = doc.data();
             const index = custosIndiretosPredefinidos.findIndex(c => c.descricao === custo.descricao);
             if (index !== -1) {
-                custosIndiretosPredefinidos[index] = custo;
+                custosIndiretosPredefinidos[index] = custo; // Sobrescreve com os dados do Firestore
             }
         });
 
-        // 4. Carrega custos indiretos adicionais do Firestore
+
+        // Carrega custos indiretos adicionais *e* o valorPorHora do Firestore.
         const custosAdicionaisSnapshot = await getDocs(collection(db, "custos-indiretos-adicionais"));
-        custosIndiretosAdicionais = [];
+        custosIndiretosAdicionais = []; // Limpa o array
         custosAdicionaisSnapshot.forEach(doc => {
-            custosIndiretosAdicionais.push({ id: doc.id, ...doc.data() });
+            custosIndiretosAdicionais.push({ id: doc.id, ...doc.data() }); // Inclui valorPorHora
         });
 
-        // 5. Carrega materiais, produtos e precificações (do Firebase)
-        const materiaisSnapshot = await getDocs(collection(db, "materiais-insumos"));
-        materiais = [];
-        materiaisSnapshot.forEach(doc => {
-          materiais.push({ id: doc.id, ...doc.data() });
-        });
-
-        const produtosSnapshot = await getDocs(collection(db, "produtos"));
-        produtos = [];
-        produtosSnapshot.forEach(doc => {
-            produtos.push({ id: doc.id, ...doc.data()});
-        });
-
-        const precificacoesSnapshot = await getDocs(collection(db, "precificacoes-geradas"));
-        precificacoesGeradas = [];
-        precificacoesSnapshot.forEach(doc => {
-           precificacoesGeradas.push({ id: doc.id, ...doc.data()});
-        });
-        // 6. Atualiza as tabelas e a interface
+        // ... (restante do carregamento permanece o mesmo) ...
         atualizarTabelaMateriaisInsumos();
-        carregarCustosIndiretosPredefinidos();
-        atualizarTabelaCustosIndiretos();
+        carregarCustosIndiretosPredefinidos(); // Carrega/preenche a lista
+        atualizarTabelaCustosIndiretos(); // Usa os valores carregados (incluindo valorPorHora)
         atualizarTabelaProdutosCadastrados();
         atualizarTabelaPrecificacoesGeradas();
+
 
         document.getElementById('salario-receber').value = maoDeObra.salario;
         document.getElementById('horas-trabalhadas').value = maoDeObra.horas;
@@ -1851,12 +1905,12 @@ async function carregarDados() {
         calcularValorHora();
         calcularCustoFerias13o();
 
-        // 7. Carrega dados do localStorage (se houver, para margemLucroPadrao e taxaCredito)
         const dadosSalvos = localStorage.getItem('dadosPrecificacao');
         if (dadosSalvos) {
             const dados = JSON.parse(dadosSalvos);
             margemLucroPadrao = typeof dados.margemLucroPadrao === 'number' ? dados.margemLucroPadrao : margemLucroPadrao;
-            taxaCredito = dados.taxaCredito || taxaCredito; // Mantém a estrutura do objeto
+            taxaCredito = dados.taxaCredito || taxaCredito;
+            proximoNumeroPrecificacao = typeof dados.proximoNumeroPrecificacao === 'number' ? dados.proximoNumeroPrecificacao : proximoNumeroPrecificacao;
 
             document.getElementById('margem-lucro-final').value = margemLucroPadrao;
             document.getElementById('taxa-credito-percentual').value = taxaCredito.percentual;
@@ -1864,7 +1918,7 @@ async function carregarDados() {
             document.getElementById('incluir-taxa-credito-nao').checked = !taxaCredito.incluir;
         }
 
-        // 8. Calcula custos *depois* de carregar tudo.
+        // Calcula custos *depois* de carregar tudo.
         calcularCustos();
 
     } catch (error) {
@@ -1873,18 +1927,16 @@ async function carregarDados() {
     }
 }
 
-
 function limparPagina() {
     if (confirm('Tem certeza que deseja limpar todos os dados LOCALMENTE (interface)? Os dados do Firebase NÃO serão apagados.')) {
         localStorage.removeItem('dadosPrecificacao');
 
-        materiais = [];  // Limpa o array de materiais
-        custosIndiretosAdicionais = []; // Limpa o array de custos adicionais
-        custosIndiretosPredefinidos = JSON.parse(JSON.stringify(custosIndiretosPredefinidosBase)); // Reseta para o valor base
-        produtos = [];  //Limpa o array de produtos
-        precificacoesGeradas = []; // Limpa o array de precificações
+        materiais = [];
+        custosIndiretosAdicionais = [];
+        custosIndiretosPredefinidos = JSON.parse(JSON.stringify(custosIndiretosPredefinidosBase)); // Reset para o valor base
+        produtos = [];
+        precificacoesGeradas = [];
 
-        // Recarrega a interface, atualizando as tabelas e limpando os formulários
         atualizarTabelaMateriaisInsumos();
         carregarCustosIndiretosPredefinidos(); //Recarrega a lista de custos
         atualizarTabelaCustosIndiretos();
@@ -1899,17 +1951,16 @@ function limparPagina() {
         document.getElementById('salario-receber').value = '';
         document.getElementById('horas-trabalhadas').value = 220;
         document.getElementById('incluir-ferias-13o-nao').checked = true;
-        calcularValorHora(); //Recalcula o valor da hora após limpar o salário
-        calcularCustoFerias13o(); //Recalcula o custo de férias e 13º
+        calcularValorHora();
+        calcularCustoFerias13o();
 
-        document.getElementById('margem-lucro-final').value = margemLucroPadrao;  //Restaura o valor padrão da margem de lucro
-        document.getElementById('taxa-credito-percentual').value = taxaCredito.percentual;  //Restaura os valores padrão da taxa de crédito
-        document.getElementById('incluir-taxa-credito-nao').checked = true; //Restaura o valor padrão da taxa de crédito
+        document.getElementById('margem-lucro-final').value = margemLucroPadrao;
+        document.getElementById('taxa-credito-percentual').value = taxaCredito.percentual;
+        document.getElementById('incluir-taxa-credito-nao').checked = true;
 
-        calcularCustos(); //Recalcula os custos com os valores limpos/restaurados
+        calcularCustos();
     }
 }
-
 // ==== FIM SEÇÃO - FUNÇÕES DE SALVAR E CARREGAR DADOS ====
 
 // ==== INÍCIO SEÇÃO - EVENT LISTENERS GERAIS (DOMContentLoaded) ====
@@ -1952,16 +2003,15 @@ document.addEventListener('DOMContentLoaded', () => {
     carregarCustosIndiretosPredefinidos();
     atualizarTabelaCustosIndiretos();
 
-    mostrarSubMenu('precificacoes-geradas'); // Exibe a seção de cálculo inicialmente.
+    mostrarSubMenu('calculo-precificacao');
 
     document.getElementById('margem-lucro-final').value = margemLucroPadrao;
     document.getElementById('taxa-credito-percentual').value = taxaCredito.percentual;
     document.getElementById('incluir-taxa-credito-sim').checked = taxaCredito.incluir;
     document.getElementById('incluir-taxa-credito-nao').checked = !taxaCredito.incluir;
 
-     // Não precisa mais chamar calcularCustos() aqui, pois carregarDados() já o faz
-    //  calcularCustos();
-     salvarTaxaCredito(); // Garante que a taxa de crédito seja salva ao carregar
+    calcularCustos();
+    salvarTaxaCredito();
 
     document.addEventListener('click', function (event) {
         const autocompleteDiv = document.getElementById('produto-resultados');
@@ -1971,44 +2021,62 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Removido daqui, pois a função buscarProdutosAutocomplete já foi definida
+    // document.getElementById('produto-pesquisa').addEventListener('input', buscarProdutosAutocomplete);
+
+    // Adiciona event listeners para os links de navegação
     const navLinks = document.querySelectorAll('nav ul li a.nav-link');
     navLinks.forEach(link => {
-        link.addEventListener('click', function (event) {
+        link.addEventListener('click', function(event) {
             event.preventDefault();
             const submenuId = this.dataset.submenu;
             mostrarSubMenu(submenuId);
         });
     });
 
+    // Botão "Cadastrar" - Materiais e Insumos
     const btnCadastrarMaterialInsumo = document.getElementById('cadastrar-material-insumo-btn');
     if (btnCadastrarMaterialInsumo) {
         btnCadastrarMaterialInsumo.addEventListener('click', cadastrarMaterialInsumo);
     }
 
+    // Botão "Salvar" - Mão de Obra
     const btnSalvarMaoDeObra = document.getElementById('btn-salvar-mao-de-obra');
     if (btnSalvarMaoDeObra) {
-        btnSalvarMaoDeObra.addEventListener('click', salvarMaoDeObra);
+        btnSalvarMaoDeObra.addEventListener('click', salvarMaoDeObra); // Usando event listener
     }
 
+    // Botão "Editar" - Mão de Obra
     const btnEditarMaoDeObra = document.getElementById('btn-editar-mao-de-obra');
     if (btnEditarMaoDeObra) {
-        btnEditarMaoDeObra.addEventListener('click', editarMaoDeObra);
+        btnEditarMaoDeObra.addEventListener('click', editarMaoDeObra);  // Usando event listener
     }
 
+     // Botão "Cadastrar Produto" -  (Proposta 1)
     const btnCadastrarProduto = document.getElementById('cadastrar-produto-btn');
     if (btnCadastrarProduto) {
         btnCadastrarProduto.addEventListener('click', cadastrarProduto);
     }
 
+    // ===== INÍCIO - EVENT LISTENER PARA AUTOCOMPLETE DE MATERIAIS =====
     document.getElementById('pesquisa-material').addEventListener('input', buscarMateriaisAutocomplete);
-    document.getElementById('busca-material').addEventListener('keyup', buscarMateriaisCadastrados);
+    // ===== FIM - EVENT LISTENER PARA AUTOCOMPLETE DE MATERIAIS =====
+
+     // Adiciona event listener para a busca de materiais (CORREÇÃO)
+     document.getElementById('busca-material').addEventListener('keyup', buscarMateriaisCadastrados);
+
+    // Adiciona event listener para a busca de produtos
     document.getElementById('busca-produto').addEventListener('keyup', buscarProdutosCadastrados);
+
+    // --- ADICIONADOS EVENT LISTENERS PARA CÁLCULO DA PRECIFICAÇÃO ---
     document.getElementById('produto-pesquisa').addEventListener('input', buscarProdutosAutocomplete);
     document.getElementById('horas-produto').addEventListener('change', calcularCustos);
     document.getElementById('margem-lucro-final').addEventListener('change', calcularPrecoVendaFinal);
-    document.getElementById('btn-salvar-taxa-credito').addEventListener('click', salvarTaxaCredito);
+    document.getElementById('btn-salvar-taxa-credito').addEventListener('click', salvarTaxaCredito); // Use o ID do botão
     document.getElementById('incluir-taxa-credito-sim').addEventListener('change', calcularTotalComTaxas);
     document.getElementById('incluir-taxa-credito-nao').addEventListener('change', calcularTotalComTaxas);
-    document.getElementById('btn-gerar-nota').addEventListener('click', gerarNotaPrecificacao);
+   document.getElementById('btn-gerar-nota').addEventListener('click', gerarNotaPrecificacao);
+
+
 });
 // ==== FIM SEÇÃO - EVENT LISTENERS GERAIS (DOMContentLoaded) ====
